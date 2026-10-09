@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>东秦杀 · JS 自测</title>
+</head>
+<!--
+  无头测试页：用 Edge/Chrome 的 --headless --dump-dom 跑。
+  这里放一份**最小 DOM**，让 ui.js / fx.js 里碰到的元素 id 都存在
+  （真实页面里这套 id 定义在 index.html）。改 index.html 的 DOM 时，
+  如果新增了 ui.js 会读的 id，记得同步补到这里。
+
+  用法见 tools/run_js_test.ps1
+-->
+<body>
+<pre id="RESULTS">RUNNING</pre>
+
+<!-- ui.js / fx.js 需要的元素 -->
+<header id="topbar">
+  <span id="my-id-banner"></span>
+  <b id="deck-count"></b>
+  <b id="discard-count"></b>
+  <b id="round-count"></b>
+  <span id="phase-label"></span>
+  <button id="btn-advance"></button>
+  <button id="btn-sound"></button>
+  <button id="btn-speed"></button>
+  <button id="btn-log-toggle"></button>
+  <button id="btn-rule-panel"></button>
+  <button id="btn-layout"></button>
+  <button id="btn-chat"></button>
+</header>
+<div id="board-main">
+<section id="opponents"></section>
+<div id="play-area"><div id="play-stack"></div></div>
+</div>
+<div id="target-bar" class="hide"></div>
+<div id="spectator-bar" class="hide"></div>
+<div id="my-hand"></div>
+<div id="hand-hint"></div>
+<div id="actions"></div>
+<div id="log"></div>
+<div id="sidebar"></div>
+<div id="sidebar-head"><button id="btn-clear-log"></button></div>
+<div id="fx-layer"></div>
+<div id="modal-layer"></div>
+<div id="toast-layer"></div>
+<div id="screen-over"><h2 id="over-title"></h2><div id="over-body"></div></div>
+
+<script src="../js/data.js"></script>
+<script src="../js/fx.js"></script>
+<script src="../js/ai.js"></script>
+<script src="../js/engine.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/selftest.js"></script>
+<script src="../js/net.js"></script>
+<script src="js_test.js"></script>
+</body>
+</html>

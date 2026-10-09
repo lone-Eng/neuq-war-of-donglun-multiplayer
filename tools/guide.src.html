@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>东秦杀：点名册 · 新手指南</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:rgba(30,39,51,.82); --panel2:#26313f;
+  --line:rgba(120,140,170,.22); --line2:rgba(140,165,200,.35);
+  --text:#e9eef7; --dim:#93a3b8; --gold:#e8c46a;
+  --red:#e05a5a; --blue:#5aa8e0; --green:#5ac47e; --purple:#a97ae0; --orange:#e0894a;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;background:
+    radial-gradient(1100px 620px at 50% -12%, #1d2a3a 0%, transparent 60%),
+    linear-gradient(180deg,#0d1117,#0b0f15 70%);
+  color:var(--text); font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,sans-serif;
+  font-size:15px; line-height:1.85; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:940px;margin:0 auto;padding:0 20px 100px;}
+
+/* ---- 封面 ---- */
+.hero{padding:64px 0 34px;text-align:center;border-bottom:1px solid var(--line);margin-bottom:36px;}
+.hero h1{font-size:46px;letter-spacing:8px;margin:0 0 6px;font-weight:900;}
+.hero h1 span{font-size:22px;color:var(--gold);letter-spacing:3px;font-weight:600;}
+.hero .slogan{color:var(--dim);font-size:14px;margin:14px auto 0;max-width:640px;line-height:2;}
+.hero .meta{margin-top:22px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.chip{font-size:12.5px;padding:4px 13px;border-radius:20px;border:1px solid var(--line2);color:var(--dim);}
+.chip b{color:var(--gold);}
+
+/* ---- 目录 ---- */
+.toc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin-bottom:40px;}
+.toc h3{margin:0 0 12px;font-size:14px;color:var(--dim);letter-spacing:3px;font-weight:600;}
+.toc ol{margin:0;padding-left:22px;columns:2;column-gap:32px;}
+.toc li{margin:4px 0;font-size:14px;}
+.toc a{color:var(--text);text-decoration:none;border-bottom:1px dashed var(--line2);}
+.toc a:hover{color:var(--gold);border-bottom-color:var(--gold);}
+
+h2{font-size:25px;letter-spacing:3px;margin:56px 0 6px;padding-top:20px;border-top:1px solid var(--line);font-weight:800;}
+h2 .n{color:var(--gold);font-size:17px;margin-right:10px;letter-spacing:1px;}
+h3{font-size:17px;margin:30px 0 10px;color:var(--gold);font-weight:700;letter-spacing:1px;}
+h4{font-size:15px;margin:20px 0 8px;color:var(--blue);}
+p{margin:10px 0;}
+.lead{color:#cfdae8;}
+.dim{color:var(--dim);}
+small{color:var(--dim);font-size:12.5px;}
+b,strong{color:#fff;}
+a{color:var(--blue);}
+
+ul,ol{padding-left:24px;margin:10px 0;}
+li{margin:5px 0;}
+
+.box{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--blue);
+  border-radius:10px;padding:13px 18px;margin:16px 0;font-size:14px;}
+.box.warn{border-left-color:var(--orange);}
+.box.key{border-left-color:var(--gold);background:linear-gradient(180deg,rgba(232,196,106,.08),rgba(30,39,51,.82));}
+.box.danger{border-left-color:var(--red);}
+.box .t{font-weight:700;color:var(--gold);display:block;margin-bottom:3px;}
+
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;}
+th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top;}
+th{background:rgba(120,150,190,.1);color:var(--dim);font-weight:600;white-space:nowrap;}
+tbody tr:nth-child(even){background:rgba(255,255,255,.02);}
+
+.kbd{display:inline-block;padding:1px 7px;border-radius:5px;font-size:12px;
+  background:#1b2330;border:1px solid var(--line2);border-bottom-width:2px;font-family:ui-monospace,Consolas,monospace;}
+
+/* ---- 身份卡 ---- */
+.ids{display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:14px;margin:18px 0;}
+.id-card{border-radius:13px;padding:15px 17px;background:linear-gradient(180deg,rgba(40,50,64,.92),rgba(26,33,43,.95));
+  border:2px solid var(--line2);}
+.id-card.dean{border-color:var(--gold);}
+.id-card.staff{border-color:var(--blue);}
+.id-card.student{border-color:var(--line2);}
+.id-card.mole{border-color:var(--purple);}
+.id-card .who{font-size:22px;font-weight:900;letter-spacing:4px;}
+.id-card.dean .who{color:var(--gold);} .id-card.staff .who{color:var(--blue);}
+.id-card.mole .who{color:var(--purple);}
+.id-card .fac{font-size:12px;color:var(--dim);letter-spacing:2px;margin-bottom:9px;}
+.id-card .win{font-size:13.5px;color:#fff;}
+.id-card .desc{font-size:12.5px;color:var(--dim);margin-top:8px;line-height:1.75;}
+
+/* ---- 阶段 ---- */
+.phases{counter-reset:ph;margin:18px 0;}
+.phase{display:flex;gap:15px;padding:11px 0;border-bottom:1px dashed var(--line);}
+.phase:last-child{border-bottom:none;}
+.phase .num{counter-increment:ph;flex:none;width:29px;height:29px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;
+  background:linear-gradient(180deg,#3f6f9e,#2c5279);color:#fff;}
+.phase .num::before{content:counter(ph);}
+.phase .b{flex:1;min-width:0;}
+.phase .nm{font-weight:700;font-size:15px;}
+.phase .d{font-size:13px;color:var(--dim);}
+
+/* ---- 武将 ---- */
+.chars{display:grid;grid-template-columns:repeat(auto-fill,minmax(288px,1fr));gap:13px;margin:18px 0;}
+.ch{background:linear-gradient(180deg,rgba(40,50,64,.85),rgba(26,33,43,.9));
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;}
+.ch .hd{display:flex;align-items:baseline;gap:9px;margin-bottom:2px;}
+.ch .nm{font-size:17px;font-weight:800;letter-spacing:1px;}
+.ch .hp{font-size:12px;color:var(--red);font-weight:700;margin-left:auto;white-space:nowrap;}
+.ch .ti{font-size:12px;color:var(--dim);margin-bottom:9px;}
+.ch .sk{font-size:12.8px;line-height:1.7;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);}
+.ch .sk .sn{font-weight:700;color:var(--blue);}
+.ch .sk .st{font-size:11px;color:var(--dim);margin-left:7px;}
+.ch .sk .sx{color:#cfdae8;}
+
+/* ---- 卡牌 ---- */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:11px;margin:16px 0;}
+.cd{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px 13px;}
+.cd .cn{font-weight:700;font-size:14px;}
+.cd .cc{font-size:11.5px;color:var(--gold);margin-left:7px;font-weight:400;}
+.cd .cd2{font-size:12.5px;color:#cfdae8;line-height:1.7;margin-top:3px;}
+.cd .cp{font-size:11.5px;color:var(--dim);margin-top:4px;}
+.cd .tag{display:inline-block;font-size:10.5px;padding:0 7px;border-radius:20px;
+  border:1px solid var(--line2);color:var(--dim);margin-left:6px;}
+
+/* ---- 界面示意 ---- */
+.mock{border:1px solid var(--line2);border-radius:13px;overflow:hidden;margin:18px 0;font-size:12px;background:#101720;}
+.mock .row{padding:8px 12px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.mock .row:last-child{border-bottom:none;}
+.mock .lbl{color:var(--dim);font-size:11.5px;}
+.seat{margin-left:auto;display:flex;gap:7px;}
+.seat i{width:52px;height:34px;border-radius:6px;background:#22303f;border:1px solid var(--line2);display:block;}
+.seat i.me{background:linear-gradient(180deg,#3a2f14,#2a2210);border-color:var(--gold);}
+.mhand{display:flex;gap:6px;}
+.mhand i{width:36px;height:52px;border-radius:5px;background:linear-gradient(170deg,#f7f2e6,#ded4bf);display:block;border:1px solid #b9ae97;}
+.mhand i.hi{box-shadow:0 0 0 2px var(--gold);}
+.mcenter{flex:1;text-align:center;color:var(--dim);padding:11px 0;border:1px dashed var(--line2);border-radius:8px;}
+
+.foot{margin-top:70px;padding-top:22px;border-top:1px solid var(--line);
+  text-align:center;color:var(--dim);font-size:12.5px;line-height:2;}
+
+@media (max-width:680px){
+  .hero{padding:38px 0 24px;}
+  .hero h1{font-size:31px;letter-spacing:5px;}
+  .hero h1 span{font-size:16px;}
+  .toc ol{columns:1;}
+  h2{font-size:20px;}
+  .wrap{padding:0 14px 70px;}
+  body{font-size:14px;}
+  .chars,.cards,.ids{grid-template-columns:1fr;}
+  table{font-size:12.5px;}
+  th,td{padding:6px 8px;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <h1>东秦杀<span>：点名册</span></h1>
+  <p class="slogan">早八、点名、代课、查寝、论文查重 —— 在东秦大学，<br>翻开身份牌之前，谁都不要信。</p>
+  <div class="meta">
+    <span class="chip"><b>4–8</b> 人</span>
+    <span class="chip"><b>20–80</b> 分钟</span>
+    <span class="chip"><b>160</b> 张牌</span>
+    <span class="chip"><b>20</b> 名武将</span>
+    <span class="chip">身份推理</span>
+  </div>
+</div>
+
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#what">这是什么游戏</a></li>
+    <li><a href="#run">先把它跑起来</a></li>
+    <li><a href="#identity">你要干什么：四种身份</a></li>
+    <li><a href="#turn">一回合做什么：六个阶段</a></li>
+    <li><a href="#cards">牌怎么用</a></li>
+    <li><a href="#words">必须懂的八个词</a></li>
+    <li><a href="#start">上手三步</a></li>
+    <li><a href="#ui">界面怎么看</a></li>
+    <li><a href="#online">联机怎么玩</a></li>
+    <li><a href="#faq">常见问题</a></li>
+    <li><a href="#chars">附录：20 名武将速查</a></li>
+    <li><a href="#cardlist">附录：全部卡牌一览</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="what"><span class="n">01</span>这是什么游戏</h2>
+
+<p class="lead">一副 160 张的牌堆，一群各有心思的老师学生。有人要护住院长，有人要把他拉下马，
+有人只想活到最后 —— 而<b>开场时你只知道自己的身份</b>。</p>
+
+<p>每一轮你都在做同一件事：<b>猜出谁是敌人，然后把牌打在他身上</b>。
+但牌打出去会暴露立场，救人也会暴露立场，什么都不做又会被当成滑水 ——
+这就是这个游戏全部的乐趣。</p>
+
+<div class="box key">
+  <span class="t">和三国杀什么关系</span>
+  玩法骨架（回合六阶段、距离与攻击范围、判定、濒死救援、无懈可击式的对抗链）都从三国杀来，
+  但牌名、角色、技能全部换成了校园生活。你在三国杀里会的东西，这里八成都用得上。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="run"><span id="newline"></span><span class="n">02</span>先把它跑起来</h2>
+
+<h3>自己玩 / 几个人凑一个屏幕</h3>
+<p>双击 <b>index.html</b> 就能玩。不用装东西、不用联网、不用服务器。</p>
+
+<h3>手机上玩</h3>
+<p>把 <b>东秦杀-mobile.html</b> 发到手机上（微信发给自己就行），用浏览器打开。
+这一个文件里装着全部内容，不依赖任何其它文件。</p>
+
+<h3>多人在线联机</h3>
+<p>房主双击 <b>start-server.bat</b>，窗口里会打印一个网址，其他人连同一个 WiFi 打开它即可。
+详见 <a href="#online">第 9 节</a>。</p>
+
+<!-- ============================================================ -->
+<h2 id="identity"><span class="n">03</span>你要干什么：四种身份</h2>
+
+<p>开局洗混身份牌，每人一张。<b>除了院长，谁都不知道别人是什么身份</b> ——
+包括你旁边那位一直说"我是学生"的人。</p>
+
+<div class="ids" id="id-grid"></div>
+
+<h3>人数配置表</h3>
+<table id="id-config"><thead><tr><th>人数</th><th>院长</th><th>教务</th><th>学生</th><th>卧底</th></tr></thead><tbody></tbody></table>
+
+<div class="box warn">
+  <span class="t">新手最容易搞错的一件事</span>
+  <b>院长是公开的</b>。开局所有人就知道谁是院长，所以他会一直被学生围攻 ——
+  这也是为什么院方需要教务和学生的保护。至于<b>谁是教务、谁是卧底、谁是学生，全靠你自己推</b>。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="turn"><span class="n">04</span>一回合做什么：六个阶段</h2>
+
+<p>从院长开始，按座位顺序轮流。轮到你时，自动走这六步：</p>
+
+<div class="phases">
+  <div class="phase"><div class="num"></div><div class="b">
+    <div class="nm">回合开始</div>
+    <div class="d">触发"回合开始时"的技能（比如董伦【轮值】摸一张弃一张）。</div></div></div>
+  <div class="phase"><div class="num"></div><div class="b">
+    <div class="nm">查考勤（判定）</div>
+    <div class="d">如果你身上贴着<b>通知栏</b>里的延时牌，现在翻牌堆顶来判定它是否生效。
+      最先贴上去的最后结算。<b>辅导员签字只在这个时刻才能抵消延时牌。</b></div></div></div>
+  <div class="phase"><div class="num"></div><div class="b">
+    <div class="nm">摸牌</div>
+    <div class="d">摸两张。</div></div></div>
+  <div class="phase"><div class="num"></div><div class="b">
+    <div class="nm">出牌 ← 你的主要操作</div>
+    <div class="d">想打什么打什么，直到你点"结束出牌阶段"。限制见下一节。</div></div></div>
+  <div class="phase"><div class="num"></div><div class="b">
+    <div class="nm">弃牌</div>
+    <div class="d">手牌要弃到<b>不超过你的当前体力</b>。血越少，能存的牌越少。</div></div></div>
+  <div class="phase"><div class="num"></div><div class="b">
+    <div class="nm">结束</div>
+    <div class="d">清掉本回合的状态标记，轮到下一个人。</div></div></div>
+</div>
+
+<div class="box">
+  <span class="t">出牌阶段的硬限制</span>
+  <ul style="margin:4px 0;">
+    <li><b>点名类牌每回合只有 1 张</b>（上课点名 / 公开处刑 / 雷同警告 三者共用这个额度）——装上武器【点名册】才能不限张数</li>
+    <li>延时牌（手机没电 / 饭卡没钱 / 论文查重）每回合只能放 1 张</li>
+    <li>每名角色的主动技各限 1 次</li>
+    <li>请假条不限张数（只要血没满）</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="cards"><span class="n">05</span>牌怎么用</h2>
+
+<div id="card-sections"></div>
+
+<!-- ============================================================ -->
+<h2 id="words"><span class="n">06</span>必须懂的八个词</h2>
+
+<h3>距离</h3>
+<p>座位<b>相邻就是距离 1</b>，隔一个人是 2，以此类推。骑上 +1 坐骑会让别人看你更远，
+骑 −1 坐骑会让你看别人更近。<b>距离最小是 1</b>，再近也不会变成 0。</p>
+<p><b>+1 和 −1 坐骑是两个独立栏位</b> —— 可以同时骑一匹，两个修正各算一次；
+装第二匹 +1 只会顶掉第一匹 +1，不会碰你的 −1。所以装备栏一共是四格：
+武器 / 防具 / +1 坐骑 / −1 坐骑。</p>
+
+<h3>攻击范围</h3>
+<p><b>没装武器时攻击范围是 1</b> —— 也就是说你只能打到左右相邻的两个人。
+想打远处的人，先弄把武器。攻击范围 ≥ 距离才能指定他。</p>
+
+<h3>点名类牌</h3>
+<p>【上课点名】【公开处刑】【雷同警告】三种牌<b>共用每回合 1 张的额度</b>，
+都能被【代课】抵消。其中后两种是属性伤害（火 / 雷），所以【雨衣】挡不住它们。</p>
+
+<h3>查考勤（判定）</h3>
+<p>翻开牌堆顶一张牌作为"抽签牌"，看它的花色。红色 = ♥♦，黑色 = ♠♣。
+很多技能和延时牌都靠它决定成败 —— 这是这个游戏里最大的随机来源。</p>
+
+<h3>通知栏</h3>
+<p>延时牌不是立刻生效的，而是<b>贴在对方角色的"通知栏"里</b>，等他的回合开始时才结算。
+后贴的先结算。你可以长按那些小卡看效果。</p>
+
+<h3>响应窗口</h3>
+<p>你被人点名时，会弹窗问你<b>要不要打出【代课】</b>。这时候打出去就能免除伤害。
+类似的还有：有人用事件牌时会问全场<b>要不要打【辅导员签字】</b>把它取消掉。</p>
+
+<h3>濒死</h3>
+<p>体力归零不会立刻死，先进入<b>濒死</b>：本人可以先自救（打请假条 / 红牛），
+救不回来再由其他人轮流救援。<b>救人是公开的</b>，所以要不要救，本身就是一次表态。</p>
+
+<h3>身份推断</h3>
+<p>游戏里没有"验人"的牌，你只能靠行为推理：<b>谁打了院长（更像学生）、谁救了院长（更像教务）、
+谁一直不打人（可能是卧底在苟）</b>。电脑对手也是这么想的。</p>
+
+<!-- ============================================================ -->
+<h2 id="start"><span class="n">07</span>上手三步</h2>
+
+<h3>第一步：第一次玩就用这套设置</h3>
+<table>
+  <thead><tr><th>设置</th><th>选什么</th><th>为什么</th></tr></thead>
+  <tbody>
+    <tr><td>人数</td><td><b>5 人</b></td><td>攻守最均衡，一局 30–40 分钟</td></tr>
+    <tr><td>身份模式</td><td><b>A 随机身份</b></td><td>不用协商，直接体验推理</td></tr>
+    <tr><td>选角候选</td><td><b>3 选 1</b></td><td>有选择权，又不会挑花眼</td></tr>
+    <tr><td>保护轮</td><td><b>开</b></td><td>第一圈没人会死，给你时间看懂局面</td></tr>
+  </tbody>
+</table>
+
+<h3>第二步：出牌就三个动作</h3>
+<div class="box key">
+  <span class="t">点牌 → 点人 → 出手</span>
+  ① 点手牌里<b>描着金边</b>的那张（金边表示现在能用）<br>
+  ② 棋盘上<b>描绿边</b>的角色就是能选的目标，点他<br>
+  ③ 底部出现一条操作条，点「出手」（或者按 <span class="kbd">Enter</span>）<br>
+  <small>不需要选目标的牌（比如请假条、借笔记）点一下就直接结算了。</small>
+</div>
+
+<h3>第三步：看不懂就长按</h3>
+<p><b>长按任何一张牌</b>（电脑上右键也行）→ 弹出完整牌面：类型、目标、距离、效果、限制、结算顺序。<br>
+<b>长按任何角色</b> → 弹出他的两个技能全文、装备、通知栏、以及"他离你多远"。</p>
+
+<!-- ============================================================ -->
+<h2 id="ui"><span class="n">08</span>界面怎么看</h2>
+
+<div class="mock">
+  <div class="row">
+    <span class="lbl">顶栏</span>
+    <span>你的身份 · 角色 · 牌堆 N · 弃牌 N（可点开看） · 第 N 轮 · 当前阶段</span>
+    <span class="seat"><i class="me"></i><i></i><i></i><i></i></span>
+  </div>
+  <div class="row">
+    <span class="lbl">座位区</span>
+    <div class="mcenter">棋盘正中是<b>出牌区</b>：谁用了什么牌、打给谁，一次连锁全排在这里</div>
+  </div>
+  <div class="row">
+    <span class="lbl">你的手牌</span>
+    <div class="mhand"><i class="hi"></i><i class="hi"></i><i></i><i></i><i></i></div>
+  </div>
+  <div class="row">
+    <span class="lbl">操作区</span>
+    <span>【技能按钮】… <b>[结束出牌阶段]</b></span>
+  </div>
+</div>
+
+<table>
+  <thead><tr><th>看到什么</th><th>意思</th></tr></thead>
+  <tbody>
+    <tr><td>手牌<b>描金边</b>并在呼吸</td><td>这张牌现在可以打</td></tr>
+    <tr><td>角色面板<b>描绿边</b></td><td>他当前是你的合法目标，点他就选中</td></tr>
+    <tr><td>角色面板有金色<b>「▶ 当前回合」</b>缎带</td><td>现在轮到他行动</td></tr>
+    <tr><td>面板角上写<b>「思考中 23s」</b></td><td>正在等他做决定（联机时才看得到）；归零会由电脑代打</td></tr>
+    <tr><td>牌左下角的<b>「基本 / 装备 / 事件 / 延时」</b></td><td>这张牌的类型</td></tr>
+    <tr><td>手牌区上方出现<b>橙色"需弃 N 张"</b></td><td>你的手牌超过上限了，出牌阶段结束时要弃掉</td></tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <span class="t">两个好用的开关</span>
+  <b>布局</b>：宽屏默认围成一圈坐（能直观看出谁挨着谁），手机上默认横滑队列，顶栏可以手动切。<br>
+  <b>规则 → 出手前确认</b>：默认开着（点错人代价很大）。嫌慢可以关掉，关掉后选完目标直接结算。
+</div>
+
+<!-- ============================================================ -->
+<h2 id="online"><span class="n">09</span>联机怎么玩</h2>
+
+<h3>开一局</h3>
+<ol>
+  <li><b>房主</b>双击 <b>start-server.bat</b>（第一次会弹 Windows 防火墙提示，<b>必须点"允许访问"</b>）</li>
+  <li>窗口里会打印一个地址，标着<b>「&lt;&lt;&lt; 一般就是这个」</b>。房主自己开 <code>http://localhost:8080/</code></li>
+  <li>其他人连<b>同一个 WiFi</b>，打开那个地址（手机上直接用浏览器开就行）</li>
+  <li>房主点「联机对战 → 创建房间」，拿到 4 位房间号</li>
+  <li>房主点「<b>复制邀请链接</b>」发到群里 —— 别人<b>点开就直接进房间</b>，不用手抄地址和房间号</li>
+  <li>房主点「开始游戏」，各自选角，开打</li>
+</ol>
+
+<p>人不够没关系：<b>空座位由电脑补齐</b>，所以 3 个人也能开一局 5 人局。
+新来的人会自动变成<b>旁观</b>，看得到全场但看不到任何人的手牌和身份。</p>
+
+<h3>联机时才有的东西</h3>
+<ul>
+  <li><b>快捷语</b>（顶栏 💬）：8 句预设 + 自由输入，说的话会在角色面板上冒气泡</li>
+  <li><b>思考读秒</b>：轮到真人时全场都看得到"他在想"，掉线或超时会自动由电脑接管</li>
+  <li><b>掉线托管</b>：有人掉线，房主日志会提示，那个座位转给电脑</li>
+  <li><b>刷新不掉线</b>：中途刷新页面会自动回到原座位</li>
+</ul>
+
+<h3>几个要注意的</h3>
+<table>
+  <thead><tr><th>情况</th><th>会怎样</th></tr></thead>
+  <tbody>
+    <tr><td>房主关掉了页面 / 关了服务器窗口</td><td>这局停摆，但其他人屏幕上会弹「<b>我来接手</b>」，点一下能用存档接着打</td></tr>
+    <tr><td>房主把浏览器切走 / 最小化</td><td>浏览器会节流后台标签页，全桌会明显变慢。房主尽量保持页面在前台</td></tr>
+    <tr><td>别人打不开网页</td><td>九成是防火墙没允许；或者不在同一个 WiFi；或者地址用错了（试另一个）</td></tr>
+    <tr><td>手机连不上</td><td>确认手机连的是 WiFi 不是流量</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="faq"><span class="n">10</span>常见问题</h2>
+
+<h3>为什么我打不出第二张上课点名？</h3>
+<p>点名类牌<b>每回合只有 1 张</b>（上课点名 / 公开处刑 / 雷同警告 一起算）。
+想连打，唯一办法是装上武器【点名册】。</p>
+
+<h3>为什么选不中那个人？</h3>
+<p>多半是<b>距离超过攻击范围</b>。没武器只能打相邻的人；想要够得着，先装武器，
+或者骑 −1 坐骑把自己和别人的距离拉近。</p>
+
+<h3>【学生证】挡得住【雷同警告】吗？</h3>
+<p><b>能。</b>它按"黑色点名类牌"判定，而雷同警告全黑。但它挡不住【公开处刑】——
+公开处刑全红。</p>
+
+<h3>【辅导员签字】什么时候能打？</h3>
+<p>只有<b>牌真正起作用的那个瞬间</b>：<br>
+· 普通事件牌 —— 使用时<br>
+· 群体牌（随堂测验 / 突击查寝）—— <b>对每个目标分别问</b>，取消一个不影响别人<br>
+· 延时牌（手机没电 / 饭卡没钱 / 论文查重）—— <b>只在回合开始查考勤时问</b>，刚贴上去的时候不能取消</p>
+
+<h3>体力归零就死了吗？</h3>
+<p>不会，先进濒死。你自己可以先用请假条 / 红牛自救；救不回来，其他人会依次被问要不要救你。
+都没人救才真的出局，然后翻身份牌。</p>
+
+<h3>怎么知道自己该打谁？</h3>
+<p style="margin-bottom:0">看身份。你是<b>学生</b>就打院长；是院方就清场；是<b>卧底</b>就让别人先打院长、自己留到最后。
+不确定的时候，跟着"谁在打院长"这条线索走 —— 打院长的人大概率是学生。</p>
+
+<!-- ============================================================ -->
+<h2 id="chars"><span class="n">11</span>附录：20 名武将速查</h2>
+<p class="dim">角色只决定<b>体力上限和技能</b>，跟胜负无关 —— 胜负由身份决定。
+同一局不会出现重复武将。下面这张表是从游戏数据里直接读出来的，永远和实际对局一致。</p>
+<div class="chars" id="char-grid"></div>
+
+<!-- ============================================================ -->
+<h2 id="cardlist"><span class="n">12</span>附录：全部卡牌一览</h2>
+<p class="dim">同样直接读自游戏数据，含牌堆里各有多少张。</p>
+<div id="card-list"></div>
+
+<div class="foot">
+  东秦杀：点名册 · 新手指南<br>
+  本页与游戏数据同源生成 —— 改完 <code>js/data.js</code> 后重新跑一次 <code>tools\build-guide.ps1</code> 即可更新。<br>
+  <small>所有角色、身份、事件均为虚构游戏设定，请勿对号入座。</small>
+</div>
+
+</div>
+
+<!-- 游戏数据（内联，用来生成上面的表格） -->
+<!--INLINE-DATA-->
+
+<script>
+(function(){
+  'use strict';
+  const D = window.GameData;
+  if (!D){ return; }
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  /* ---- 身份 ---- */
+  const ORDER = ['dean','staff','student','mole'];
+  document.getElementById('id-grid').innerHTML = ORDER.map(k => {
+    const id = D.IDENTITIES[k];
+    return '<div class="id-card ' + esc(id.cls) + '">' +
+      '<div class="who">' + esc(id.name) + '</div>' +
+      '<div class="fac">阵营：' + esc(id.faction) + '</div>' +
+      '<div class="win">' + esc(id.win) + '</div>' +
+      '<div class="desc">' + esc(id.desc) + '</div></div>';
+  }).join('');
+
+  /* ---- 人数配置 ---- */
+  const cfgBody = document.querySelector('#id-config tbody');
+  cfgBody.innerHTML = Object.keys(D.IDENTITY_CONFIG).map(n => {
+    const c = D.IDENTITY_CONFIG[n];
+    return '<tr><td><b>' + n + ' 人</b></td><td>' + c.dean + '</td><td>' + c.staff +
+           '</td><td>' + c.student + '</td><td>' + c.mole + '</td></tr>';
+  }).join('');
+
+  /* ---- 每个牌名在牌堆里有几张 ---- */
+  const countOf = {};
+  (D.DECK_SPEC || []).forEach(spec => {
+    let n = 0;
+    Object.keys(spec.cards).forEach(s => { n += spec.cards[s].length; });
+    countOf[spec.name] = n;
+  });
+
+  /* ---- 卡牌分组 ---- */
+  const GROUPS = [
+    { key:'basic',   title:'基本牌',     desc:'最常见的一类。点名打人、代课挡刀、请假条回血。' },
+    { key:'event',   title:'事件牌',     desc:'用一次就生效。扰乱、过牌、群体伤害，以及能取消一切的那张。' },
+    { key:'delayed', title:'延时事件牌', desc:'不立刻生效，而是贴进对方的「通知栏」，等他的回合开始查考勤才结算。每回合只能放 1 张。' },
+    { key:'equip',   title:'装备牌',     desc:'装上后持续生效。装备栏一共四格：武器 / 防具 / +1 坐骑 / −1 坐骑 —— 两种坐骑可以同时骑。' }
+  ];
+  const SLOT = D.SLOT_NAME || { weapon:'武器', armor:'防具', mountUp:'+1 坐骑', mountDown:'-1 坐骑' };
+
+  function cardEl(name){
+    const m = D.CARDS[name];
+    const det = D.CARD_DETAIL && D.CARD_DETAIL[name];
+    const n = countOf[name];
+    let html = '<div class="cd"><div class="cn">' + esc(name) +
+      (n ? '<span class="cc">' + n + ' 张</span>' : '') +
+      (m.slot ? '<span class="tag">' + SLOT[m.slot] + '</span>' : '') +
+      (m.range ? '<span class="tag">范围 ' + m.range + '</span>' : '') +
+      (m.mount ? '<span class="tag">' + esc(m.mount) + ' 坐骑</span>' : '') +
+      '</div>';
+    html += '<div class="cd2">' + esc(m.desc || '') + '</div>';
+    if (det && det.limit) html += '<div class="cp">限制：' + esc(det.limit) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  document.getElementById('card-sections').innerHTML = GROUPS.map(g => {
+    let names = Object.keys(D.CARDS).filter(n => D.CARDS[n].type === g.key);
+    if (g.key === 'equip'){
+      // 按栏位顺序排（武器 → 防具 → +1 坐骑 → -1 坐骑），顺序取自 D.EQUIP_SLOTS，
+      // 以后加栏位不用改这里
+      const order = {};
+      (D.EQUIP_SLOTS || []).forEach((s, i) => { order[s] = i; });
+      names = names.slice().sort((a,b) =>
+        ((order[D.CARDS[a].slot] || 0) - (order[D.CARDS[b].slot] || 0)) || a.localeCompare(b));
+    }
+    return '<h3 id="g-' + g.key + '">' + g.title + '</h3><p class="dim">' + g.desc + '</p>' +
+           '<div class="cards">' + names.map(cardEl).join('') + '</div>';
+  }).join('');
+
+  /* ---- 武将 ---- */
+  document.getElementById('char-grid').innerHTML = D.CHARACTERS.map(c => {
+    return '<div class="ch">' +
+      '<div class="hd"><span class="nm">' + esc(c.name) + '</span>' +
+        '<span class="hp">体力 ' + c.hp + '</span></div>' +
+      '<div class="ti">' + esc(c.title) + '</div>' +
+      c.skills.map(s => '<div class="sk"><span class="sn">【' + esc(s.name) + '】</span>' +
+        '<span class="st">' + esc(s.type) + '</span>' +
+        '<div class="sx">' + esc(s.text) + '</div></div>').join('') +
+      '</div>';
+  }).join('');
+
+  /* ---- 完整卡牌一览（按类型分组、带长说明） ---- */
+  document.getElementById('card-list').innerHTML = GROUPS.map(g => {
+    let names = Object.keys(D.CARDS).filter(n => D.CARDS[n].type === g.key);
+    if (!names.length) return '';
+    return '<h4>' + g.title + '</h4><table><thead><tr><th>牌名</th><th>张数</th><th>效果</th><th>限制</th></tr></thead><tbody>' +
+      names.map(n => {
+        const m = D.CARDS[n], det = D.CARD_DETAIL && D.CARD_DETAIL[n];
+        return '<tr><td><b>' + esc(n) + '</b></td><td>' + (countOf[n] || '—') + '</td>' +
+               '<td>' + esc((det && det.effect) || m.desc || '') + '</td>' +
+               '<td><small>' + esc((det && det.limit) || '') + '</small></td></tr>';
+      }).join('') +
+      '</tbody></table>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

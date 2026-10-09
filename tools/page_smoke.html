@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>东秦杀 · 真实页面冒烟测试</title>
+</head>
+<!--
+  在**真实的 index.html** 上做冒烟测试。
+
+  js_test.html 只加载游戏脚本、不加载 main.js，所以它测不到
+  「点联机按钮会不会炸」「大厅 DOM 是否渲染得出来」这类问题。
+  这里把真的 index.html 放进 iframe（同源，靠 --allow-file-access-from-files），
+  在里面点按钮、查 DOM。
+
+  用法见 tools/run_page_smoke.ps1
+-->
+<body>
+<pre id="RESULTS">pending</pre>
+<!-- src 由脚本设置：默认测 ../index.html，可以用 ?page= 指到别的页面
+     （比如打包出来的单文件手机版） -->
+<iframe id="app" width="1100" height="760" style="border:1px solid #333"></iframe>
+<script>
+(function () {
+  'use strict';
+  var out = [];
+  var total = 0, bad = 0;
+  function ok(name, cond, detail) {
+    total++;
+    if (!cond) bad++;
+    out.push((cond ? '[ok]   ' : '[FAIL] ') + name + ((!cond && detail) ? '  <- ' + detail : ''));
+  }
+  function done() {
+    out.push('');
+    out.push('SMOKE-TOTAL ' + total + ' SMOKE-FAILED ' + bad);
+    document.getElementById('RESULTS').textContent = out.join('\n');
+    var sink = null;
+    try { sink = new URLSearchParams(location.search).get('sink'); } catch (e) { /* 忽略 */ }
+    if (sink) {
+      try {
+        fetch(sink, { method:'POST', headers:{'Content-Type':'text/plain'},
+                      body: document.getElementById('RESULTS').textContent })
+          .catch(function () {});
+      } catch (e) { /* 忽略 */ }
+    }
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  var frame = document.getElementById('app');
+  var errs = [];
+  var target = '../index.html';
+  try {
+    var p = new URLSearchParams(location.search).get('page');
+    if (p) target = p;
+  } catch (e) { /* 忽略 */ }
+  frame.src = target;
+
+  frame.addEventListener('load', function () {
+    var w = frame.contentWindow, d = frame.contentDocument;
+    w.addEventListener('error', function (e) {
+      errs.push((e.message || '?') + ' @ ' + String(e.filename || '').split('/').pop() + ':' + e.lineno);
+    });
+    w.addEventListener('unhandledrejection', function (e) {
+      errs.push('unhandled rejection: ' + ((e.reason && e.reason.message) || e.reason));
+    });
+
+    sleep(700).then(function () {
+      ok('index.html 加载后没有 JS 错误', errs.length === 0, errs.join(' | '));
+      ok('开始界面是可见的', !!d.querySelector('#screen-start.active'));
+      ok('单机按钮在', !!d.getElementById('btn-start'));
+      ok('联机按钮在', !!d.getElementById('btn-net'));
+      var need = ['screen-start', 'screen-draft', 'screen-role', 'screen-game', 'screen-over', 'screen-net'];
+      var missing = need.filter(function (id) { return !d.getElementById(id); });
+      ok('需要的界面都在（开始/轮抽/选角/游戏/结算/联机）', missing.length === 0, missing.join(','));
+      // 手机布局的 CSS 必须到位 —— 多文件版是 <link>，单文件版是内联 <style>。
+      // （index.html 曾经根本没引用 mobile.css，导致手机直接开服务器地址拿到的是桌面布局）
+      var mobCss = !!d.querySelector('link[href="css/mobile.css"]');
+      if (!mobCss) {
+        mobCss = Array.prototype.some.call(d.querySelectorAll('style'), function (s) {
+          return /max-width:\s*900px/.test(s.textContent || '');
+        });
+      }
+      ok('手机布局的 CSS 到位了（link 或内联）', mobCss);
+      ok('net.js 被加载', typeof w.Net === 'object' && typeof w.Net.showHome === 'function');
+
+      var bn = d.getElementById('btn-net');
+      if (bn) bn.click();
+      return sleep(500);
+    }).then(function () {
+      ok('点「联机对战」后切到了联机界面',
+         !!d.querySelector('#screen-net.active'),
+         d.querySelector('.screen.active') ? d.querySelector('.screen.active').id : '(none)');
+      ok('大厅渲染出了「创建房间」', !!d.getElementById('net-create'));
+      ok('大厅渲染出了「加入房间」', !!d.getElementById('net-join'));
+      ok('大厅有输入框（项目原本一个 input 样式都没有）',
+         !!d.querySelector('#screen-net input[type=text]'));
+      // file:// 打开时必须让用户填服务器地址，否则永远连不上
+      ok('从 file:// 打开时要求填服务器地址', !!d.getElementById('net-server'));
+      ok('点联机后没有新的 JS 错误', errs.length === 0, errs.join(' | '));
+
+      var join = d.getElementById('net-join');
+      if (join) join.click();
+      return sleep(300);
+    }).then(function () {
+      ok('点「加入房间」后展开房间号输入', !!d.getElementById('net-code'));
+      ok('房间号输入框有样式类', d.getElementById('net-code') &&
+         d.getElementById('net-code').className.indexOf('room-code') >= 0);
+
+      // 返回单机
+      var back = d.getElementById('net-back');
+      if (back) back.click();
+      return sleep(300);
+    }).then(function () {
+      ok('点「返回单机」能回到开始界面', !!d.querySelector('#screen-start.active'));
+
+      // 单机开局必须还能跑（联机改动不能碰坏单机路径）
+      var bs = d.getElementById('btn-start');
+      if (bs) bs.click();
+      return sleep(600);
+    }).then(function () {
+      ok('点「单机游戏」进入选角界面', !!d.querySelector('#screen-role.active'),
+         d.querySelector('.screen.active') ? d.querySelector('.screen.active').id : '(none)');
+      var cards = d.querySelectorAll('#role-options .role-card');
+      ok('选角界面渲染出了候选武将', cards.length >= 2, cards.length);
+      ok('候选武将卡有名字', cards.length > 0 &&
+         !!cards[0].querySelector('.rc-name') &&
+         cards[0].querySelector('.rc-name').textContent.length > 0);
+      ok('身份卡渲染出来了', !!d.querySelector('#my-identity-card .big-word'));
+      ok('全程没有 JS 错误', errs.length === 0, errs.join(' | '));
+
+      // 真的选一个武将，确认能进游戏
+      if (cards.length) cards[0].click();
+      return sleep(800);
+    }).then(function () {
+      ok('选完武将后进入了游戏界面',
+         !!d.querySelector('#screen-game.active'),
+         d.querySelector('.screen.active') ? d.querySelector('.screen.active').id : '(none)');
+      var panels = d.querySelectorAll('#opponents .player-panel');
+      ok('座位上渲染出了所有角色面板', panels.length === 5, panels.length);
+      var hand = d.querySelectorAll('#my-hand .card');
+      ok('自己的手牌渲染出来了', hand.length >= 4, hand.length);
+      ok('顶栏显示了自己的身份', (d.getElementById('my-id-banner').textContent || '').indexOf('身份') >= 0,
+         d.getElementById('my-id-banner').textContent);
+      // 测试窗口默认 800×600，落在手机断点内。
+      // 这条曾经是坏的：收起日志抽屉的逻辑只存在于 build-mobile.ps1 注入的补丁里，
+      // 而"手机直接打开服务器地址"走 index.html + mobile.css，没有那段 ——
+      // 结果手机上一开局日志就占掉半个屏幕。
+      if (w.matchMedia('(max-width: 900px)').matches) {
+        ok('窄屏下日志抽屉默认收起（否则手机上会被日志占半个屏幕）',
+           d.getElementById('sidebar').classList.contains('hide'),
+           d.getElementById('sidebar').className);
+      }
+      ok('进游戏后没有 JS 错误', errs.length === 0, errs.join(' | '));
+      done();
+    }).catch(function (e) {
+      ok('冒烟测试本身没有抛异常', false, (e && e.message) || String(e));
+      done();
+    });
+  });
+})();
+</script>
+</body>
+</html>

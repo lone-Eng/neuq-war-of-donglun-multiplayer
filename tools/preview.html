@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>东秦杀 · 界面预览</title>
+</head>
+<!--
+  界面预览：把**真实的 index.html** 放进 iframe，用脚本点几下开到游戏桌面，
+  然后交给 Edge 的 --screenshot 截图。用来肉眼确认布局改动（尤其是环形座位）。
+
+  用法见 tools/shoot.ps1，或手动：
+    msedge --headless=new --screenshot=out.png --window-size=1500,1000
+           --virtual-time-budget=6000 "file:///.../tools/preview.html?n=6&layout=ring"
+-->
+<body style="margin:0;background:#0d1117">
+<iframe id="app" style="border:0;display:block"></iframe>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var n = parseInt(q.get('n') || '5', 10);
+  var layout = q.get('layout') || 'ring';
+  var w = parseInt(q.get('w') || '1500', 10);
+  var h = parseInt(q.get('h') || '1000', 10);
+
+  var frame = document.getElementById('app');
+  frame.width = w;
+  frame.height = h;
+
+  frame.addEventListener('load', function () {
+    var d = frame.contentDocument, win = frame.contentWindow;
+    try { win.localStorage.setItem('dqk_layout', layout); } catch (e) { /* 忽略 */ }
+    // 注意：布局模式在 bindTopbar（页面 DOMContentLoaded）时就已经读进模块变量了，
+    // 现在再写 localStorage 也没用 —— 必须直接切。
+    if (win.UI && win.UI.getLayout && win.UI.getLayout() !== layout && win.UI.toggleLayout)
+      win.UI.toggleLayout();
+    if (win.UI) win.UI.confirmBeforePlay = true;
+
+    // 选人数（开始界面上的按钮）
+    var pick = d.querySelector('#pick-count button[data-count="' + n + '"]');
+    if (pick) pick.click();
+    // 身份模式（?mode=B 可以截到身份轮抽界面）
+    var mode = q.get('mode');
+    if (mode){
+      var mb = d.querySelector('#pick-mode button[data-mode="' + mode + '"]');
+      if (mb) mb.click();
+    }
+    try { win.localStorage.setItem('dqk_tutorial', '1'); } catch (e) { /* 忽略 */ }
+    // 单机开局 → 轮抽 / 选角
+    d.getElementById('btn-start').click();
+    if (q.get('draft')) return;                 // 停在轮抽界面截图
+    // 选第一个武将 → 进桌面
+    var card = d.querySelector('#role-options .role-card');
+    if (card) card.click();
+    // 把节奏拉到极慢，让 AI 在截图前基本停住不动 ——
+    // 否则虚拟时钟会快进掉好几轮，截图时多半正好弹着一个询问框、整个桌面被压暗。
+    if (win.G) win.G.speed = 400;
+    // 让重绘跑一轮（布局偏好是懒加载的）
+    if (win.UI && win.UI.render) win.UI.render();
+
+    // ?target=1：把回合交给本地玩家并进入出牌阶段，再点一张需要目标的牌，
+    // 这样能截到「点棋盘选目标 + 底部操作条」的样子
+    if (q.get('target') && win.G && win.Engine){
+      var G = win.G, E = win.Engine;
+      var me = G.players[G.humanSeat];
+      G.turnSeat = G.humanSeat;
+      win.UI.askHuman({ kind:'playPhase', player: me,
+                        playable: E.playableList(me), skills: E.usableSkills(me) });
+      win.UI.render();
+      var NO_TARGET = ['draw2', 'harvest', 'aoeAttack', 'massHeal', 'lightning',
+                       'equip', 'heal', 'buff', 'dodge', 'nullify'];
+      var els = d.querySelectorAll('#my-hand .card');
+      for (var i = 0; i < els.length; i++){
+        var nm = els[i].querySelector('.c-name');
+        if (!nm) continue;
+        var meta = win.GameData.CARDS[nm.textContent];
+        if (meta && NO_TARGET.indexOf(meta.kind) < 0){ els[i].click(); break; }
+      }
+    }
+  });
+
+  frame.src = '../index.html';
+})();
+</script>
+</body>
+</html>

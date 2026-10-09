@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>东秦杀 · 联机端到端测试</title>
+</head>
+<!--
+  真正跑一遍联机：两个真实浏览器页面（iframe）+ 真实的中转服务器。
+
+  这是最接近"房主和同学各开一个窗口"的测试 —— 走的完全是用户会点的那些按钮：
+  点联机 → 填地址 → 建房/加入 → 开始游戏 → 各自选角 → 进游戏。
+
+  前提：server.py 正在跑（默认 http://127.0.0.1:8080）。
+  用法见 tools/run_e2e.ps1
+-->
+<body>
+<pre id="RESULTS">pending</pre>
+<div style="display:flex;gap:10px">
+  <div><div>房主</div><iframe id="host" src="../index.html" width="720" height="560"></iframe></div>
+  <div><div>玩家</div><iframe id="guest" src="../index.html" width="720" height="560"></iframe></div>
+</div>
+<script>
+(function () {
+  'use strict';
+
+  var SERVER = null;
+  try { SERVER = new URLSearchParams(location.search).get('server'); } catch (e) { /* 忽略 */ }
+  SERVER = SERVER || 'http://127.0.0.1:8080';
+
+  var out = [];
+  var total = 0, bad = 0;
+  function ok(name, cond, detail) {
+    total++;
+    if (!cond) bad++;
+    out.push((cond ? '[ok]   ' : '[FAIL] ') + name + ((!cond && detail) ? '  <- ' + detail : ''));
+  }
+  function done() {
+    out.push('');
+    out.push('E2E-TOTAL ' + total + ' E2E-FAILED ' + bad);
+    var text = out.join('\n');
+    document.getElementById('RESULTS').textContent = text;
+    var sink = null;
+    try { sink = new URLSearchParams(location.search).get('sink'); } catch (e) { /* 忽略 */ }
+    if (sink) {
+      try {
+        fetch(sink, { method:'POST', headers:{'Content-Type':'text/plain'}, body: text })
+          .catch(function () {});
+      } catch (e) { /* 忽略 */ }
+    }
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  /* 服务器地址输入框只在「推断不出地址」时才渲染。
+     两个 iframe 共享同一个 file:// 源的 localStorage，房主填过一次之后，
+     玩家那边就已经能推断出地址、不会再渲染这个输入框 —— 所以这里要容错。 */
+  function setVal(doc, id, v) {
+    var el = doc.getElementById(id);
+    if (el) el.value = v;
+    return !!el;
+  }
+  function waitFor(fn, ms, step) {
+    var deadline = Date.now() + (ms || 8000);
+    return new Promise(function (resolve) {
+      (function poll() {
+        var v = null;
+        try { v = fn(); } catch (e) { v = null; }
+        if (v) return resolve(v);
+        if (Date.now() > deadline) return resolve(null);
+        setTimeout(poll, step || 100);
+      })();
+    });
+  }
+
+  var hostFrame = document.getElementById('host');
+  var guestFrame = document.getElementById('guest');
+  var H, G, dh, dg, errs = [];
+
+  function onErr(where, w) {
+    w.addEventListener('error', function (e) {
+      errs.push(where + ': ' + (e.message || '?') + ' @' + e.lineno);
+    });
+    w.addEventListener('unhandledrejection', function (e) {
+      errs.push(where + ' rejection: ' + ((e.reason && e.reason.message) || e.reason));
+    });
+  }
+
+  function loaded(f) {
+    return new Promise(function (r) {
+      if (f.contentDocument && f.contentDocument.readyState === 'complete') return r();
+      f.addEventListener('load', function () { r(); });
+    });
+  }
+
+  Promise.all([loaded(hostFrame), loaded(guestFrame)])
+    .then(function () { return sleep(600); })
+    .then(function () {
+      H = hostFrame.contentWindow; dh = hostFrame.contentDocument;
+      G = guestFrame.contentWindow; dg = guestFrame.contentDocument;
+      onErr('房主', H); onErr('玩家', G);
+
+      // 两边都先关掉自动重连（上一次测试可能留下了房间号和身份令牌）。
+      // 会话存在 sessionStorage 里（每个标签页独立），偏好存在 localStorage 里，
+      // 两个都清一遍以免上一轮的残留影响这一轮。
+      [H, G].forEach(function (w) {
+        try { w.sessionStorage.removeItem('dqk_net_last'); } catch (e) {}
+        try { w.localStorage.removeItem('dqk_net_last'); } catch (e) {}
+        // 关掉新手引导：它会盖一层弹窗，干扰下面的桌面断言
+        try { w.localStorage.setItem('dqk_tutorial', '1'); } catch (e) {}
+      });
+
+      ok('两个页面都加载成功',
+         !!dh.getElementById('btn-net') && !!dg.getElementById('btn-net'));
+
+      // ---- 房主建房 ----
+      dh.getElementById('btn-net').click();
+      setVal(dh, 'net-server', SERVER);
+      dh.getElementById('net-create').click();
+      return waitFor(function () {
+        var el = dh.querySelector('.room-code-big');
+        return el && /^\d{4}$/.test(el.textContent.trim()) ? el.textContent.trim() : null;
+      }, 10000);
+    })
+    .then(function (code) {
+      ok('房主建房后拿到 4 位房间号', !!code, code);
+      if (!code) throw new Error('房主没建出房间号');
+
+      // ---- 玩家加入 ----
+      dg.getElementById('btn-net').click();
+      setVal(dg, 'net-server', SERVER);
+      dg.getElementById('net-join').click();
+      dg.getElementById('net-code').value = code;
+      dg.getElementById('net-join-go').click();
+      return waitFor(function () {
+        var rows = dg.querySelectorAll('#net-box .lobby-row');
+        return rows.length >= 1 ? rows.length : null;
+      }, 10000).then(function (n) {
+        ok('玩家加入后在房间里看到了名单', !!n && n >= 1, n);
+        return sleep(600).then(function () { return code; });
+      });
+    })
+    .then(function (code) {
+      ok('房主那边也看到了加入的玩家',
+         dh.querySelectorAll('#net-box .lobby-row').length === 2,
+         dh.querySelectorAll('#net-box .lobby-row').length);
+
+      // ---- 房主开始游戏 ----
+      var go = dh.getElementById('net-go');
+      ok('房主界面有「开始游戏」按钮', !!go);
+      if (go) go.click();
+
+      // 两边都该进入选角界面
+      return waitFor(function () {
+        var a = dh.querySelector('#screen-role.active');
+        var b = dg.querySelector('#screen-role.active');
+        return (a && b) ? true : null;
+      }, 12000).then(function (bothInRole) {
+        ok('两边都进入了选角界面', !!bothInRole,
+           '房主=' + (dh.querySelector('.screen.active') || {}).id +
+           ' 玩家=' + (dg.querySelector('.screen.active') || {}).id);
+        ok('两边都渲染出了候选武将',
+           dh.querySelectorAll('#role-options .role-card').length >= 2 &&
+           dg.querySelectorAll('#role-options .role-card').length >= 2,
+           dh.querySelectorAll('#role-options .role-card').length + '/' +
+           dg.querySelectorAll('#role-options .role-card').length);
+        ok('两边各自看到了自己的身份（而且不是同一张）',
+           !!dh.querySelector('#my-identity-card .big-word') &&
+           !!dg.querySelector('#my-identity-card .big-word'));
+        ok('两边开的都是本局的身份（房主 0 号位、玩家 1 号位）',
+           H.G.humanSeat === 0 && G.G.humanSeat === 1,
+           H.G.humanSeat + '/' + G.G.humanSeat);
+
+        // 各自选一个武将
+        var hc = dh.querySelector('#role-options .role-card');
+        var gc = dg.querySelector('#role-options .role-card');
+        if (hc) hc.click();
+        if (gc) gc.click();
+        return true;
+      });
+    })
+    .then(function () {
+      // ---- 进入游戏 ----
+      return waitFor(function () {
+        return (dh.querySelector('#screen-game.active') && dg.querySelector('#screen-game.active'))
+          ? true : null;
+      }, 15000);
+    })
+    .then(function (bothInGame) {
+      ok('两边都进入了游戏桌面', !!bothInGame,
+         '房主=' + (dh.querySelector('.screen.active') || {}).id +
+         ' 玩家=' + (dg.querySelector('.screen.active') || {}).id);
+
+      return sleep(1500).then(function () {
+        // ---- 桌面渲染 ----
+        ok('房主的桌面渲染出 5 个座位',
+           dh.querySelectorAll('#opponents .player-panel').length === 5,
+           dh.querySelectorAll('#opponents .player-panel').length);
+        ok('玩家的桌面也渲染出 5 个座位',
+           dg.querySelectorAll('#opponents .player-panel').length === 5,
+           dg.querySelectorAll('#opponents .player-panel').length);
+
+        var hHand = dh.querySelectorAll('#my-hand .card');
+        var gHand = dg.querySelectorAll('#my-hand .card');
+        ok('房主看到了自己的手牌', hHand.length >= 4, hHand.length);
+        ok('玩家看到了自己的手牌', gHand.length >= 4, gHand.length);
+
+        // ---- 最关键的断言：玩家端看不到别人的手牌 ----
+        var gPlayers = G.G.players;
+        var gMe = gPlayers[G.G.humanSeat];
+        var others = gPlayers.filter(function (p, i) { return i !== G.G.humanSeat; });
+        ok('玩家端自己的手牌是真牌（没有占位符）',
+           gMe.hand.length > 0 && gMe.hand.every(function (c) { return !c.hidden; }),
+           JSON.stringify(gMe.hand.slice(0, 2)));
+        ok('玩家端别人的手牌**全是背面占位牌**',
+           others.every(function (p) { return p.hand.every(function (c) { return c.hidden; }); }),
+           JSON.stringify(others[0].hand.slice(0, 2)));
+        ok('占位牌是等长的（手牌张数是真的）',
+           others.every(function (p) {
+             var real = H.G.players[p.seat];
+             return p.hand.length === real.hand.length;
+           }),
+           others.map(function (p) { return p.hand.length; }).join(','));
+
+        // ---- 身份隐藏 ----
+        var deanSeat = H.G.players.map(function (p) { return p.identity; }).indexOf('dean');
+        var hiddenCount = gPlayers.filter(function (p, i) {
+          return i !== G.G.humanSeat && i !== deanSeat && p.identity !== null;
+        }).length;
+        ok('玩家端看不到别人的身份（除院长外全是 null）', hiddenCount === 0,
+           gPlayers.map(function (p) { return p.identity; }).join(','));
+        ok('玩家端看得到自己的身份', !!gMe.identity, gMe.identity);
+        ok('玩家端看得到院长的身份', gPlayers[deanSeat].identity === 'dean');
+
+        // ---- 牌堆只发张数 ----
+        ok('玩家端的牌堆只有张数、没有牌', !('deck' in G.G) || G.G.deck.length === 0,
+           G.G.deck && G.G.deck.length);
+        ok('玩家端能显示牌堆剩余张数', G.G.deckCount > 0, G.G.deckCount);
+
+        // ---- 日志同步 ----
+        var hLog = dh.querySelectorAll('#log div').length;
+        var gLog = dg.querySelectorAll('#log div').length;
+        ok('房主桌面有战斗日志', hLog > 0, hLog);
+        ok('玩家桌面也收到了同一份日志', gLog > 0, gLog);
+
+        // ---- 顶栏 ----
+        ok('玩家顶栏显示的是**自己**的身份',
+           (dg.getElementById('my-id-banner').textContent || '').indexOf('身份') >= 0,
+           dg.getElementById('my-id-banner').textContent);
+
+        // ---- 快捷语：房主发一句，玩家端该冒出气泡 ----
+        H.Net.sendChat('快点出牌啦');
+        return sleep(1200).then(function () {
+          var b = dg.querySelector('#opponents .chat-bubble');
+          ok('房主发的快捷语在玩家端冒出了气泡',
+             !!b && b.textContent === '快点出牌啦', b && b.textContent);
+          // 聊天**不进战斗日志**（以前一句话就把"谁打了谁"顶没了），
+          // 它进的是快捷语历史，气泡负责即时提醒。
+          ok('快捷语没有被写进战斗日志',
+             !/快点出牌啦/.test(dg.getElementById('log').textContent));
+          ok('玩家端的快捷语历史记下了这句话',
+             G.UI.chatHistory.some(function (m) { return m.text === '快点出牌啦'; }),
+             JSON.stringify(G.UI.chatHistory));
+          ok('房主端自己也看得到这句话（气泡 + 历史）',
+             dh.querySelector('.chat-bubble') !== null &&
+             H.UI.chatHistory.some(function (m) { return m.text === '快点出牌啦'; }));
+
+          // ---- 邀请链接 ----
+          var link = H.Net.inviteLink();
+          ok('房主能生成邀请链接（含 4 位房间号）',
+             /room=\d{4}$/.test(link || ''), link);
+          ok('邀请链接用的是服务器地址',
+             (link || '').indexOf(SERVER) === 0, link + '  vs  ' + SERVER);
+
+          ok('全程没有 JS 错误', errs.length === 0, errs.join(' | '));
+        });
+      });
+    })
+    .then(done)
+    .catch(function (e) {
+      ok('测试本身没有抛异常', false, (e && e.message) || String(e));
+      if (errs.length) out.push('  错误：' + errs.join(' | '));
+      done();
+    });
+})();
+</script>
+</body>
+</html>

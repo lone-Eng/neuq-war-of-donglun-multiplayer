@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>东秦杀：点名册</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/mobile.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ 开始界面 ============ -->
+  <div id="screen-start" class="screen active">
+    <div class="start-box">
+      <h1 class="logo">东秦杀<span>：点名册</span></h1>
+      <p class="slogan">早八、点名、代课、查寝、论文查重——在东秦大学，翻开身份牌之前，谁都不要信。</p>
+
+      <div class="form-row">
+        <label>玩家人数</label>
+        <div class="btn-group" id="pick-count">
+          <button data-count="4">4 人</button>
+          <button data-count="5" class="on">5 人</button>
+          <button data-count="6">6 人</button>
+          <button data-count="7">7 人</button>
+          <button data-count="8">8 人</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>身份模式</label>
+        <div class="btn-group" id="pick-mode">
+          <button data-mode="A" class="on">A 随机身份</button>
+          <button data-mode="B">B 自选阵营</button>
+          <button data-mode="C">C 半随机</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>你的选角候选</label>
+        <div class="btn-group" id="pick-deal">
+          <button data-deal="3" class="on">3 选 1</button>
+          <button data-deal="5">5 选 1</button>
+          <button data-deal="2">2 选 1</button>
+          <button data-deal="8">8 选 1</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>可选规则</label>
+        <div class="btn-group" id="pick-opt">
+          <button data-opt="protect" class="toggle on">保护轮（第一圈不死）</button>
+          <button data-opt="ai" class="toggle on">AI 接管其他玩家</button>
+          <button data-opt="fast" class="toggle">快速动画</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>身份配置预览</label>
+        <div id="identity-preview" class="identity-preview"></div>
+      </div>
+
+      <div class="start-actions">
+        <button id="btn-start" class="primary big">单机游戏</button>
+        <button id="btn-net" class="big">联机对战</button>
+        <button id="btn-rules" class="big">规则速查</button>
+        <button id="btn-replay" class="big">看复盘</button>
+        <input type="file" id="replay-file" accept=".json,application/json" hidden>
+      </div>
+      <p class="footnote">所有角色、身份、事件均为虚构游戏设定，请勿对号入座。</p>
+    </div>
+  </div>
+
+  <!-- ============ 身份轮抽界面（模式 B 自选阵营）============ -->
+  <div id="screen-draft" class="screen">
+    <div class="role-box">
+      <h2>选择你的身份</h2>
+      <p class="hint">身份池是公开的，按座位顺序轮流挑；但<b>选完只有你自己知道</b>（院长公开）。</p>
+      <div id="draft-note" class="hint deal-note"></div>
+      <div id="draft-options" class="role-options"></div>
+    </div>
+  </div>
+
+  <!-- ============ 选角界面 ============ -->
+  <div id="screen-role" class="screen">
+    <div class="role-box">
+      <h2>选择你的角色</h2>
+      <div id="my-identity-card" class="identity-card"></div>
+      <p class="hint">角色只提供体力上限与技能，胜负由身份决定。</p>
+      <div id="role-options" class="role-options"></div>
+    </div>
+  </div>
+
+  <!-- ============ 游戏界面 ============ -->
+  <div id="screen-game" class="screen">
+    <!-- 房主掉线提示条 -->
+    <div id="host-gone-bar" class="hide">
+      <span class="hg-text">房主掉线了，这局随时可能停摆</span>
+      <button id="hg-take" class="mini">我来接手</button>
+      <button id="hg-dismiss" class="mini">先不管</button>
+    </div>
+    <!-- 复盘回放条（只有回放时出现） -->
+    <div id="replay-bar" class="hide">
+      <span class="rb-badge">复盘回放</span>
+      <button id="rb-toggle" class="mini">⏸ 暂停</button>
+      <div class="rb-track"><div id="rb-fill"></div></div>
+      <span id="rb-pos" class="rb-pos">0 / 0 帧</span>
+      <button id="rb-s1" class="mini on">1×</button>
+      <button id="rb-s2" class="mini">2×</button>
+      <button id="rb-s4" class="mini">4×</button>
+      <button id="rb-exit" class="mini">退出复盘</button>
+    </div>
+    <header id="topbar">
+      <div class="topbar-left">
+        <span class="tb-item" id="my-id-banner">你的身份：—</span>
+        <span class="tb-item">牌堆 <b id="deck-count">0</b></span>
+        <span class="tb-item clickable" id="tb-discard" title="点开看弃牌堆（数牌用）">弃牌 <b id="discard-count">0</b></span>
+        <span class="tb-item">第 <b id="round-count">1</b> 轮</span>
+        <span class="tb-item" id="phase-label">回合开始</span>
+      </div>
+      <div class="topbar-right">
+        <button id="btn-chat" class="mini" title="快捷语（联机时全场可见）">💬</button>
+        <button id="btn-layout" class="mini" title="座位排列方式">布局：队列</button>
+        <button id="btn-advance" class="mini" title="中央出牌区何时清空">▶ 自动清空</button>
+        <button id="btn-sound" class="mini" title="开关音效">🔊 音效</button>
+        <button id="btn-speed" class="mini">节奏：标准</button>
+        <button id="btn-log-toggle" class="mini">日志</button>
+        <button id="btn-rule-panel" class="mini">规则</button>
+      </div>
+    </header>
+
+    <main id="board">
+      <div id="board-main">
+        <!-- 横向座位排列（包含你自己） -->
+        <section id="opponents"></section>
+        <!-- 屏幕中央出牌区：一次结算连锁中的所有牌都留在这里，整条链结束后清空 -->
+        <section id="play-area">
+          <div id="play-stack"></div>
+        </section>
+      </div>
+      <aside id="sidebar">
+        <div id="sidebar-head">
+          <span>战斗日志</span>
+          <button id="btn-clear-log" class="mini">清空</button>
+        </div>
+        <div id="log"></div>
+      </aside>
+    </main>
+
+    <footer id="bottom">
+      <!-- 选目标时的操作条（点棋盘选人，这里出「确定 / 取消 / 列表选择」） -->
+      <div id="target-bar" class="hide"></div>
+      <!-- 旁观席专用条 -->
+      <div id="spectator-bar" class="hide"></div>
+      <div id="my-hand-wrap">
+        <div id="my-hand"></div>
+        <div id="hand-hint" class="hand-hint"></div>
+      </div>
+      <div id="actions"></div>
+    </footer>
+  </div>
+
+  <!-- ============ 联机界面（创建/加入/房间等待，内容由 js/net.js 动态生成）============ -->
+  <div id="screen-net" class="screen">
+    <div class="net-box" id="net-box"></div>
+  </div>
+
+  <!-- ============ 弹窗层 ============ -->
+  <div id="fx-layer"></div>
+  <div id="modal-layer"></div>
+  <div id="toast-layer"></div>
+
+  <!-- ============ 结算 / 结束界面 ============ -->
+  <div id="screen-over" class="screen">
+    <div class="over-box">
+      <h2 id="over-title">游戏结束</h2>
+      <div id="over-body"></div>
+      <div class="start-actions">
+        <button id="btn-again" class="primary big">再来一局</button>
+        <button id="btn-save-replay" class="big">保存这局复盘</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/selftest.js"></script>
+<script src="js/net.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

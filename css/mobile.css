@@ -1,0 +1,223 @@
+/* =========================================================
+ *  东秦杀：点名册  ·  手机适配层
+ *  在桌面样式之后加载，只覆盖与手机相关的部分
+ * ========================================================= */
+
+/* 触屏通用：去掉点击高亮与长按菜单，避免"点一下闪蓝" */
+*{ -webkit-tap-highlight-color: transparent; }
+html,body{ overscroll-behavior:none; }
+.player-panel,.card,.mini-card,.gear-chip,.exch-card{ -webkit-touch-callout:none; }
+button{ touch-action:manipulation; }
+.card,.player-panel,.mini-card{ user-select:none; -webkit-user-select:none; }
+
+/* 触屏设备关闭 hover 抬升，避免"点过之后卡片一直悬着" */
+@media (hover:none){
+  .card:hover{ transform:none; box-shadow:0 3px 10px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.7); }
+  .card:hover .c-tip{ color:transparent; }
+  .player-panel:hover,.role-card:hover,.target-pill:hover{ transform:none; }
+}
+
+/* ---------------- 手机竖屏 ---------------- */
+@media (max-width: 900px){
+  :root{
+    --card-w:56px; --card-h:80px;
+    --shadow:0 6px 16px rgba(0,0,0,.45);
+  }
+  body{ font-size:13px; }
+
+  /* 顶栏：两行紧凑排布 */
+  #topbar{
+    height:auto; padding:6px 8px; flex-wrap:wrap; gap:6px;
+    align-items:center;
+  }
+  .topbar-left{ gap:8px; font-size:11px; flex:1 1 100%; justify-content:flex-start; }
+  .topbar-right{ gap:5px; flex:1 1 100%; justify-content:flex-start; flex-wrap:wrap; }
+  .tb-item{ font-size:11px; }
+  #my-id-banner{ font-size:11px; }
+  .bid{ font-size:11.5px; padding:1px 7px; }
+  #phase-label{ font-size:10.5px; padding:3px 9px; }
+  button.mini{ padding:6px 9px; font-size:11.5px; border-radius:8px; }
+
+  /* 棋盘改为纵向：座位条 → 出牌区 */
+  #board{ flex-direction:column; }
+  #board-main{ flex:1; min-height:0; }
+
+  /* 座位：横向可滑动的紧凑卡条（含你自己） */
+  #opponents{
+    flex:none; display:flex; flex-wrap:nowrap; gap:8px; padding:8px 10px 4px;
+    overflow-x:auto; overflow-y:hidden; justify-content:flex-start;
+    scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch;
+  }
+  #opponents::-webkit-scrollbar{ height:0; }
+  #opponents .player-panel{
+    width:152px; min-width:152px; max-width:152px; flex:none;
+    padding:8px 9px 9px; border-radius:13px; scroll-snap-align:center;
+  }
+  .pp-avatar{ width:30px; height:30px; font-size:14px; }
+  .pp-name{ font-size:13px; letter-spacing:0; }
+  .pp-title{ font-size:9.5px; }
+  .pp-seat{ font-size:9px; }
+  .pp-id{ font-size:9.5px; padding:1px 6px; }
+  .pp-hp{ gap:2px; margin:6px 0 3px; }
+  .hp-pip{ width:11px; height:8px; }
+  .hp-num{ font-size:10px; }
+  .pp-row{ font-size:9.5px; gap:4px; }
+  .pp-tag{ font-size:9.5px; padding:0 5px; border-radius:6px; }
+  .gear-chip{ font-size:9.5px; padding:1px 6px; }
+  .mini-card{ width:30px; height:42px; }
+  .mini-card .m-rank{ font-size:10px; top:1px; left:3px; }
+  .mini-card .m-suit{ font-size:8px; }
+  .mini-card .m-name{ font-size:6.5px; bottom:2px; }
+  .pp-judge-wrap{ margin-top:6px; padding-top:5px; }
+  .pp-judge-label{ font-size:9px; margin-bottom:4px; }
+
+  /* 中央出牌区 */
+  #play-area{ padding:2px 8px 6px; }
+  #play-stack{ width:100%; gap:6px; padding:2px; }
+  .exch-card{ padding:7px 9px; gap:9px; border-radius:11px; }
+  .exch-card.resp{ margin-left:20px; padding:6px 8px; }
+  .exch-thumb{ width:40px; height:56px; border-radius:6px; }
+  .exch-card.resp .exch-thumb{ width:32px; height:45px; }
+  .exch-thumb .t-rank{ font-size:12px; top:2px; left:4px; }
+  .exch-thumb .t-suit{ font-size:10px; top:2px; right:4px; }
+  .exch-thumb .t-name{ font-size:7.5px; bottom:3px; }
+  .exch-head{ font-size:11.5px; gap:5px; }
+  .exch-head b{ font-size:12.5px; }
+  .exch-name{ font-size:13px; }
+  .exch-suit,.exch-tag{ font-size:10px; padding:0 6px; }
+  .exch-line{ font-size:11.5px; margin-top:3px; line-height:1.5; }
+
+  /* 底部：手牌横滑 + 按钮横滑 */
+  #bottom{ padding:6px 8px calc(8px + env(safe-area-inset-bottom)); }
+  #my-hand{
+    display:flex; flex-wrap:nowrap; overflow-x:auto; overflow-y:visible;
+    gap:6px; padding:8px 2px 10px; justify-content:flex-start;
+    -webkit-overflow-scrolling:touch; min-height:calc(var(--card-h) + 14px);
+  }
+  #my-hand::-webkit-scrollbar{ height:0; }
+  #my-hand .card{ flex:none; scroll-snap-align:start; }
+  .hand-hint{ font-size:10.5px; margin-top:2px; }
+  #actions{
+    display:flex; flex-wrap:nowrap; overflow-x:auto; gap:6px;
+    padding:6px 0 2px; border-top:1px dashed rgba(120,140,170,.18);
+    -webkit-overflow-scrolling:touch;
+  }
+  #actions::-webkit-scrollbar{ height:0; }
+  #actions button{ flex:none; padding:9px 13px; font-size:13px; }
+  #actions > span{ flex:none; }
+
+  /* 日志：底部抽屉 */
+  #sidebar{
+    position:fixed; left:0; right:0; bottom:0; top:auto;
+    width:auto; height:48vh; z-index:70;
+    border-left:none; border-top:1px solid var(--line2);
+    border-radius:16px 16px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.6);
+  }
+  #sidebar.hide{ display:none; }
+  #log{ font-size:12px; padding:8px 12px calc(12px + env(safe-area-inset-bottom)); }
+
+  /* 弹窗：接近全屏，按钮加大便于点按 */
+  #modal-layer{ padding:10px; align-items:flex-end; }
+  .modal{
+    width:100%; min-width:0; max-width:none; max-height:82vh;
+    padding:14px 14px 12px; border-radius:16px 16px 12px 12px;
+  }
+  .modal h3{ font-size:15.5px; }
+  .modal .m-desc{ font-size:12px; margin-bottom:10px; }
+  .modal .m-body{ margin-bottom:10px; }
+  .modal .m-actions{ gap:8px; }
+  .modal .m-actions button{ flex:1 1 auto; padding:11px 14px; font-size:14px; }
+  .modal .m-cards,.modal .m-targets{ gap:7px; max-height:46vh; overflow:auto; padding:2px; }
+  .target-pill{ padding:11px 14px; font-size:13.5px; flex:1 1 46%; }
+  .m-cards .card{ --card-w:60px; --card-h:86px; }
+
+  /* 详情浮层 */
+  .fx-info{ padding:10px; align-items:flex-end; }
+  .fx-info .modal{ max-height:86vh; }
+  .dt-head{ gap:10px; }
+  .dt-avatar{ width:44px; height:44px; font-size:19px; }
+  .dt-card .card{ --card-w:72px; --card-h:102px; }
+  .dt-line{ font-size:14px; }
+  .dt-row{ font-size:12.5px; padding:6px 0; }
+  .dt-k{ width:60px; }
+  .dt-skill-text{ font-size:12px; }
+
+  /* 出牌区提示与判定 */
+  .fx-judge-card{ width:84px; height:118px; font-size:36px; }
+  .fx-judge-card .s{ font-size:32px; }
+  .fx-death-name{ font-size:21px; }
+  .fx-turn{ top:auto; bottom:24vh; padding:10px 20px; font-size:16px; }
+  .fx-turn-name{ font-size:18px; }
+  .fx-chip{ font-size:13px; padding:9px 16px; gap:7px; max-width:92vw; white-space:normal; }
+  .fx-cardinfo{ padding:12px; gap:12px; }
+  .fx-ci-name{ font-size:18px; }
+
+  /* 开始界面 / 选角 */
+  .start-box{ padding:26px 16px 40px; }
+  .logo{ font-size:34px; letter-spacing:5px; }
+  .logo span{ font-size:18px; }
+  .slogan{ font-size:12.5px; margin-bottom:22px; }
+  .form-row{ flex-direction:column; gap:8px; margin-bottom:14px; }
+  .form-row > label{ width:auto; padding-top:0; font-size:12px; }
+  .btn-group{ gap:7px; }
+  .btn-group button{ padding:9px 12px; font-size:13px; }
+  .start-actions{ gap:10px; margin-top:22px; }
+  button.big{ padding:13px 22px; font-size:15px; flex:1 1 auto; }
+  .role-box{ padding:20px 14px 40px; }
+  .role-options{ gap:12px; }
+  .role-card{ width:100%; max-width:420px; padding:14px; }
+  .identity-card{ padding:10px 18px; }
+  .identity-card .big-word{ font-size:20px; }
+  .over-box{ padding:34px 16px; }
+  .over-box h2{ font-size:26px; }
+  #over-body{ font-size:12.5px; line-height:1.9; }
+
+  /* 手机上永远用横滑队列 —— 圆桌在小屏上会挤成一团。
+     （layoutMode() 在 <1100px 时本来就默认队列，这里再兜一道底） */
+  #opponents.ring{ position:static; inset:auto; display:flex; padding:8px 10px 4px; }
+  #opponents.ring .player-panel{ position:static; width:auto; transform:none; }
+  #board-main.ring #play-area{ padding:4px 14px 10px; }
+
+  #target-bar{ margin:0 10px 6px; padding:8px 10px; gap:8px; }
+  #target-bar .tb-hint{ display:none; }
+  #target-bar .tb-actions{ margin-left:0; width:100%; }
+  #target-bar .tb-actions button{ flex:1 1 auto; }
+  #spectator-bar{ margin:0 10px 6px; gap:10px; font-size:12px; }
+  #spectator-bar .sp-hint{ display:none; }
+  .chat-bubble{ max-width:170px; font-size:12px; }
+  .chat-presets button{ flex:1 1 44%; }
+
+  /* 联机大厅 */
+  .net-box{ padding:30px 16px 44px; }
+  .net-box h2{ font-size:21px; letter-spacing:3px; }
+  .room-line{ font-size:12px; gap:9px; }
+  .room-code-big{ font-size:28px; letter-spacing:6px; }
+  .lobby-row{ padding:8px 11px; font-size:13px; }
+  /* iOS 上字号小于 16px 的输入框一聚焦就会把整页放大 */
+  input[type=text]{ font-size:16px; padding:11px 13px; }
+  input.room-code{ font-size:22px; letter-spacing:8px; }
+}
+
+/* 横屏手机 / 矮窗口：进一步压缩高度 */
+@media (max-width: 900px) and (max-height: 560px){
+  :root{ --card-w:50px; --card-h:72px; }
+  #opponents{ padding:5px 8px 2px; }
+  #opponents .player-panel{ width:138px; min-width:138px; max-width:138px; padding:6px 8px; }
+  .pp-avatar{ width:24px; height:24px; font-size:12px; }
+  .pp-title{ display:none; }
+  .mini-card{ width:24px; height:34px; }
+  .mini-card .m-name{ display:none; }
+  #play-stack{ gap:5px; }
+  .exch-card{ padding:6px 8px; }
+  .exch-thumb{ width:34px; height:48px; }
+  .exch-line{ font-size:11px; }
+  #sidebar{ height:60vh; }
+  .hand-hint{ display:none; }
+}
+
+/* 窄屏（小手机）进一步缩排 */
+@media (max-width: 380px){
+  #opponents .player-panel{ width:140px; min-width:140px; max-width:140px; }
+  .target-pill{ flex:1 1 100%; }
+  .exch-card.resp{ margin-left:12px; }
+}
