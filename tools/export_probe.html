@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>复盘导出探针</title></head>
+<!--
+  开发用探针（不参与发布）：
+
+  造一局**假对局**并录一段复盘，调 Net.buildReplayHtml() 生成分享版 HTML，
+  再 POST 给一个收集器落盘。然后用无头浏览器打开那个落盘的文件看它到底能不能放 ——
+  否则"导出成功"和"打开是白屏"你是分不出来的。
+
+  两种模式：
+    · 默认 —— 骨架**从真实的 index.html 取**（fetch 出来解析），不手写一份简化 DOM，
+      手写的跟真实结构不一样，验证出来的布局是假的。
+    · ?page=<地址> —— 把这个地址放进 iframe，用**那个页面自己的** Net 导出。
+      手机单文件版（东秦杀-mobile.html）走的是这条：它的脚本和样式是内联的，
+      collectJs / collectCss 命中"内联"分支而**不是** fetch 分支 ——
+      那条分支跟默认这条完全不是一回事，而它恰好是发到微信里实际会跑的那条。
+
+  必须从 http://服务器地址/tools/export_probe.html 打开（file:// 下 fetch 不到源码，
+  iframe 也跨不了源）。
+-->
+<body style="background:#0d1117;color:#e9eef7;font-family:monospace;padding:16px">
+<pre id="RESULTS">RUNNING</pre>
+<div id="app"></div>
+<iframe id="target-frame" width="1100" height="760" style="border:1px solid #333;display:none"></iframe>
+
+<script src="../js/data.js"></script>
+<script src="../js/fx.js"></script>
+<script src="../js/ai.js"></script>
+<script src="../js/engine.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/net.js"></script>
+<script>
+(function () {
+  'use strict';
+  var out = [];
+  function ok(n, c, d){ out.push((c ? '[ok]   ' : '[FAIL] ') + n + ((!c && d) ? '  <- ' + d : '')); }
+  function done(){ document.getElementById('RESULTS').textContent = out.join('\n'); }
+  function fail(e){ ok('探针抛异常', false, (e && e.message) || String(e)); done(); }
+
+  var Net = window.Net;
+
+  /**
+   * 把「断言结果 + 生成的 HTML」一起回传：运行器拿到后会把 HTML 落盘，
+   * 再用无头浏览器打开它，看它到底能不能放 —— 这一步才是真正的验证。
+   */
+  function report(html){
+    var sink = null;
+    try { sink = new URLSearchParams(location.search).get('sink'); } catch (e) {}
+    if (!sink){ done(); return; }
+    var payload = JSON.stringify({ results: out.join('\n'), html: html });
+    return fetch(sink, { method:'POST', headers:{'Content-Type':'application/json'}, body: payload })
+      .then(function (){ done(); }, function (e){ ok('回传失败', false, e && e.message); done(); });
+  }
+
+  /** 导出结果的公共断言。tag 用来区分两次跑（默认这页 / 单文件版）。 */
+  function assertHtml(html, tag){
+    ok(tag + '生成了 HTML', typeof html === 'string' && html.length > 100000, html && html.length);
+    ok(tag + '有 DOCTYPE', html.indexOf('<!DOCTYPE html>') === 0);
+    ok(tag + '带了复盘数据', html.indexOf('id="replay-data"') > 0);
+    ok(tag + '带了真实骨架（#board / #sidebar）',
+       html.indexOf('id="board"') > 0 && html.indexOf('id="sidebar"') > 0);
+    ok(tag + '内联了 data / engine / ui / net',
+       html.indexOf('===== data.js =====') > 0 && html.indexOf('===== engine.js =====') > 0 &&
+       html.indexOf('===== ui.js =====') > 0 && html.indexOf('===== net.js =====') > 0);
+    ok(tag + '没把 main.js 塞进去（否则会自己开一局）', html.indexOf('===== main.js =====') < 0);
+    ok(tag + '内联源码里没有裸的脚本结束标签',
+       html.split('</scr' + 'ipt').length === 9, html.split('</scr' + 'ipt').length);
+    ok(tag + '复盘条不是空的（清骨架时别把按钮一起清掉）',
+       html.indexOf('id="rb-toggle"') > 0 && html.indexOf('id="rb-fill"') > 0);
+    ok(tag + '大小合理（>250KB 说明游戏本体进去了）', html.length > 250000, Math.round(html.length / 1024) + ' KB');
+  }
+
+  var target = null;
+  try { target = new URLSearchParams(location.search).get('page'); } catch (e) { /* 忽略 */ }
+  if (target) probePage(target); else probeLocal();
+
+  /**
+   * 在 w 这个窗口里造一局假对局并录 40 帧。
+   *
+   * 必须造出**真的状态快照**（Net.project）：导出的文件是靠这些帧把座位
+   * 和手牌渲染出来的。塞一份只有 {t:0} 的空帧，导出是成功的，
+   * 但打开后是个空棋盘 —— 那正是"看着对、打开没东西"这一类坏法。
+   *
+   * 参数化 w 是为了两种模式共用：默认模式传 window，
+   * ?page= 模式传 iframe 的 window（对局得造在**那个页面**里）。
+   */
+  function seedFakeReplay(w){
+    var Dw = w.GameData, Ew = w.Engine, Nw = w.Net;
+    Ew.initGame({ count: 4, mode: 'A', deal: 3, hotseat: false, humanSeats: [0] });
+    var g = w.G;
+    g.players.forEach(function (p, i) { p.char = Dw.CHARACTERS[i]; });
+    Ew.finalizeRoles(); Ew.finalizeGame();
+    g.players.forEach(function (p) {
+      for (var i = 0; i < 4; i++) { var c = g.deck.pop(); if (c) p.hand.push(c); }
+    });
+    Nw.indexDeck();
+    Nw.startRec(0, 4);
+    Nw.recT0 = Date.now() - 12000;
+    for (var k = 0; k < 40; k++){
+      Nw.rec.frames.push({
+        t: k * 300,
+        s: k % 4 === 0 ? Nw.project(0, false) : null,
+        ev: k === 2 ? [{ k: 'floatText', a: [1, '-1', 'dmg'] }] : null
+      });
+    }
+    return Nw.rec.frames.length;
+  }
+
+  /* ---------------------------------------------------------------
+   *  模式 1：默认 —— 在**本页**造一局假对局，骨架取自真实的 index.html
+   * --------------------------------------------------------------- */
+  function probeLocal(){
+    // 1) 先把真实 index.html 的 #app 骨架搬过来，再动别的
+    fetch('../index.html').then(function (r){ return r.text(); }).then(function (html){
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var real = doc.getElementById('app');
+      if (!real){ ok('取到真实骨架', false, 'index.html 里没有 #app'); return; }
+      var host = document.getElementById('app');
+      host.className = real.className || '';
+      host.innerHTML = real.innerHTML;
+      ok('骨架取自真实 index.html', !!host.querySelector('#screen-game') && !!host.querySelector('#board'));
+
+      // 2) 造一局假对局
+      ok('录了 40 帧（超过导出门槛）', seedFakeReplay(window) === 40);
+
+      // 3) 生成
+      return Net.buildReplayHtml().then(function (html){
+        assertHtml(html, '');
+        return report(html);
+      });
+    }).catch(fail);
+  }
+
+  /* ---------------------------------------------------------------
+   *  模式 2：?page=<地址> —— 让**那个页面自己**导出
+   *
+   *  验的是那个页面的 collectJs / collectCss / cleanShell 找不找得到
+   *  自己的源码和骨架 —— 单文件版这几步走的分支跟默认模式完全不同。
+   * --------------------------------------------------------------- */
+  function probePage(url){
+    var f = document.getElementById('target-frame');
+    f.style.display = '';
+    f.addEventListener('load', function (){
+      try {
+        var w = f.contentWindow;
+        if (!w || !w.Net || typeof w.Net.buildReplayHtml !== 'function'){
+          ok('目标页面里没有导出接口', false, url); done(); return;
+        }
+        ok('目标页面带着完整的游戏代码（Net / UI / Engine 都在）',
+           !!(w.UI && w.Engine && w.GameData));
+        w.Net.recLive = false;
+        ok('目标页面里录了 40 帧', seedFakeReplay(w) === 40);
+        ok('目标页面认这份录像', w.Net.hasReplay() === true);
+        w.Net.buildReplayHtml().then(function (html){
+          assertHtml(html, '[单文件版] ');
+          return report(html);
+        }, function (e){
+          ok('目标页面能生成分享版 HTML', false, (e && e.message) || e); done();
+        });
+      } catch (e){ fail(e); }
+    });
+    f.src = url;
+  }
+})();
+</script>
+</body>
+</html>

@@ -39,6 +39,18 @@ function log(text, cls, only, redacted){
   if (window.UI && UI.pushLog) UI.pushLog(text, cls);
 }
 function logBig(t){ log(t, 'big'); }
+
+/* ---------------- 赛后评分用的埋点 ----------------
+ * 只记"做的事"，不记身份 —— 评分和 MVP 要奖励打得好的人，
+ * 而不是"抽到好身份的人"。 */
+function noteStat(seat, key, n){
+  if (!G.stats) G.stats = {};
+  const s = G.stats[seat] || (G.stats[seat] = { dmg:0, kills:0, saves:0, heals:0, skills:0 });
+  s[key] = (s[key] || 0) + (n === undefined ? 1 : n);
+}
+function statOf(seat){
+  return (G.stats && G.stats[seat]) || { dmg:0, kills:0, saves:0, heals:0, skills:0 };
+}
 function toast(t, cls){ if (window.UI && UI.toast) UI.toast(t, cls); }
 function rand(n){ return Math.floor(Math.random()*n); }
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -60,7 +72,13 @@ function curTurnPlayer(){ return G.players[G.turnSeat]; }
 /* ---------------- 技能判定 ---------------- */
 function hasSkill(p, name){ return p.char && p.char.skills.some(s => s.name === name); }
 function skillUsed(p, name){ return p.skillsUsedThisTurn && p.skillsUsedThisTurn[name]; }
-function markSkillUsed(p, name){ p.skillsUsedThisTurn[name] = true; }
+function markSkillUsed(p, name){
+  // 同一个技能一回合内可能被标记两次（playPhase 里两份名单有重叠），
+  // 提前返回既保证幂等，也避免赛后评分把技能次数算重
+  if (p.skillsUsedThisTurn && p.skillsUsedThisTurn[name]) return;
+  p.skillsUsedThisTurn[name] = true;
+  noteStat(p.seat, 'skills', 1);
+}
 
 /* 【炫富】改成**每轮**限一次（原来是每回合一次）。
    弃 1 张牌就能取消任意一张针对你的牌，在多人局里一回合一次太强了。
@@ -260,6 +278,7 @@ async function damage(target, amount, source, type, opts){
   if (source && source !== target){
     if (source.alive) source.damageDealtThisTurn = (source.damageDealtThisTurn||0) + dmg;
     G.harmLog.push({ s: source.seat, t: target.seat, a: dmg, type: type });
+    noteStat(source.seat, 'dmg', dmg);          // 赛后评分：实际打出的伤害
   }
 
   // 濒死
@@ -285,10 +304,12 @@ async function chainConduct(target, amount, source, type){
   }
 }
 
-async function heal(target, amount, reason){
+async function heal(target, amount, reason, by){
   if (!target.alive) return;
   const before = target.hp;
   target.hp = Math.min(target.maxHp, target.hp + amount);
+  // 赛后评分：治疗**他人**才算（自己喝请假条不算贡献）
+  if (by && by !== target && target.hp > before) noteStat(by.seat, 'heals', target.hp - before);
   if (target.hp > before){
     log(target.name + ' 回复 ' + (target.hp - before) + ' 点体力（' + target.hp + '/' + target.maxHp + '）', 'heal');
     if (window.FX){ FX.floatText(target.seat, '+' + (target.hp - before), 'heal'); FX.sfx('heal'); }
@@ -356,7 +377,7 @@ async function rescueLoop(dying, helper, isSelf){
         if (sel.cards && sel.cards.length){
           discardFromHand(helper, sel.cards);
           noteRescue(helper, dying);
-          await heal(dying, 1, '鼓励');
+          await heal(dying, 1, '鼓励', helper);
         }
         continue;
       }
@@ -366,7 +387,7 @@ async function rescueLoop(dying, helper, isSelf){
       removeFromHand(helper, sel.cards); toDiscard(sel.cards);
       log(helper.name + ' 使用 ' + cardText(sel.cards[0]) + ' 救援 ' + dying.name, 'heal');
       noteRescue(helper, dying);
-      await heal(dying, 1, 'rescue');
+      await heal(dying, 1, 'rescue', helper);
       continue;
     }
     // 本人自救
@@ -392,11 +413,15 @@ async function rescueLoop(dying, helper, isSelf){
   }
 }
 
-/** 记一笔"谁救了院长"。院方阵营的 AI 靠它判断某人更像教务，从而少打他。 */
+/**
+ * 记一笔救援。
+ *   · 院长的救援另记进 G.rescueLog —— 院方 AI 靠它判断"某人更像教务"，从而少打他
+ *   · 所有救援都记进评分统计（救谁是贡献，跟身份无关）
+ */
 function noteRescue(helper, dying){
-  if (!helper || !dying) return;
-  if (dying.identity !== 'dean') return;      // 只记救院长（规则书里院长是院方唯一公开身份）
-  if (helper === dying) return;               // 自救不算
+  if (!helper || !dying || helper === dying) return;   // 自救不算
+  noteStat(helper.seat, 'saves', 1);
+  if (dying.identity !== 'dean') return;
   if (!G.rescueLog) G.rescueLog = {};
   G.rescueLog[helper.seat] = (G.rescueLog[helper.seat] || 0) + 1;
 }
@@ -405,6 +430,12 @@ function noteRescue(helper, dying){
 async function killPlayer(p, source){
   p.alive = false;
   p.revealed = true;
+  // 赛后评分：击杀只算"别人的人头"（自爆/无来源不算）
+  if (source && source !== p && source.alive !== false){
+    noteStat(source.seat, 'kills', 1);
+    if (!G.killLog) G.killLog = [];
+    G.killLog.push({ killer: source.seat, victim: p.seat });
+  }
   logBig('☠ ' + p.name + ' 死亡，身份揭示：' + IDENTITIES[p.identity].name);
   if (window.FX) await FX.death(p);
   // 牌全部进弃牌堆
@@ -452,6 +483,54 @@ function checkVictory(){
   const bad = students.concat(moles).filter(p => p.alive);
   if (bad.length === 0){ endGame('dean', '学生与卧底全部出局，院长存活'); return; }
 }
+/* ---------------- 赛后评分 ----------------
+ * 只奖励"做的事"，不奖励"抽到什么身份" —— 身份输赢已经由阵营分体现了，
+ * 这里比的是"这一局谁打得漂亮"。所以一个打得很凶但输掉的学生，
+ * 完全可以拿到比躺赢的教务更高的分。 */
+const SCORE_RULE = [
+  { key:'dmg',    label:'造成伤害', per:3,  unit:'点' },
+  { key:'kills',  label:'击杀',     per:15, unit:'个' },
+  { key:'saves',  label:'救援濒死', per:12, unit:'次' },
+  { key:'heals',  label:'治疗他人', per:4,  unit:'点' },
+  { key:'skills', label:'发动技能', per:2,  unit:'次', cap:20 }
+];
+const SCORE_WIN = 30, SCORE_DRAW = 10, SCORE_ALIVE = 8;
+
+function buildScoreboard(winner){
+  const rows = G.players.map(p => {
+    const st = statOf(p.seat);
+    const win = !!(winner &&
+      ((winner === 'dean' && (p.identity === 'dean' || p.identity === 'staff')) ||
+       (winner === 'student' && p.identity === 'student') ||
+       (winner === 'mole' && p.identity === 'mole')));
+    const parts = [];
+    let score = 0;
+    if (win){ score += SCORE_WIN; parts.push({ label:'阵营胜利', v:SCORE_WIN }); }
+    else if (!winner){ score += SCORE_DRAW; parts.push({ label:'平局', v:SCORE_DRAW }); }
+    SCORE_RULE.forEach(r => {
+      let v = (st[r.key] || 0) * r.per;
+      if (r.cap) v = Math.min(v, r.cap);
+      if (v > 0){ score += v; parts.push({ label:r.label, v:v }); }
+    });
+    if (p.alive){ score += SCORE_ALIVE; parts.push({ label:'存活到终局', v:SCORE_ALIVE }); }
+    return { seat:p.seat, name:p.name, charTitle:(p.char ? p.char.title : ''),
+             identity:p.identity, alive:!!p.alive, win:win,
+             stats:st, score:score, parts:parts };
+  });
+  // MVP：总分最高；并列时比击杀 → 再比伤害 → 再比座位号（小的优先）
+  let mvp = null;
+  for (const r of rows){
+    if (!mvp){ mvp = r; continue; }
+    if (r.score > mvp.score) mvp = r;
+    else if (r.score === mvp.score){
+      if (r.stats.kills !== mvp.stats.kills) { if (r.stats.kills > mvp.stats.kills) mvp = r; }
+      else if (r.stats.dmg > mvp.stats.dmg) mvp = r;
+    }
+  }
+  if (mvp && mvp.score <= 0) mvp = null;      // 一分没得就别评了
+  return { winner: winner, rows: rows, mvpSeat: mvp ? mvp.seat : -1 };
+}
+
 function endGame(winner, reason){
   if (G.over) return;
   G.over = true;
@@ -463,9 +542,10 @@ function endGame(winner, reason){
     else if (winner === 'student') humanWin = (human.identity === 'student');
     else if (winner === 'mole') humanWin = (human.identity === 'mole');
   }
+  G.scoreboard = buildScoreboard(winner);
   logBig('游戏结束：' + (winner ? IDENTITIES[winner].name + '阵营胜利' : '平局') + '（' + reason + '）');
   if (window.FX) FX.gameEnd(humanWin);
-  if (window.UI && UI.showOver) UI.showOver(winner, reason, humanWin);
+  if (window.UI && UI.showOver) UI.showOver(winner, reason, humanWin, G.scoreboard);
 }
 
 /* =========================================================
@@ -752,8 +832,8 @@ async function useCardInner(user, card, targets){
 
   // 辅导员签字：**只在牌真正起作用的那一刻**才能被抵消。
   //   · 普通事件牌 → 就是现在（作用时）
-  //   · 延时牌（手机没电/饭卡没钱/论文查重）→ 等到回合开始查考勤、真正生效时才问，
-  //     放置的时候不开放（见 judgePhase）
+  //   · 延时牌（手机没电/饭卡没钱/论文查重）→ 等到回合开始查考勤、**翻开抽签牌之前**问，
+  //     放置的时候不开放（见 judgePhase）。跟闪电一样：翻开了就只剩改判窗口，不能再补。
   //   · 群体牌（随堂测验/突击查寝）→ 在 resolveAoe 里对**每个目标**单独问
   const isAoe = (card.kind === 'aoeAttack');
   if (card.type === 'event' && card.kind !== 'nullify' && !isAoe){
@@ -786,7 +866,7 @@ async function useCardInner(user, card, targets){
     case 'aoeAttack':    await resolveAoe(user, card); break;
     case 'relay':        await resolveRelay(user, live[0]); break;
     case 'harvest':      await resolveHarvest(user); break;
-    case 'massHeal':     for (const p of alivePlayers()) await heal(p, 1, '放假通知'); break;
+    case 'massHeal':     for (const p of alivePlayers()) await heal(p, 1, '放假通知', user); break;
     case 'fireTalk':     await resolveFireTalk(user, live[0]); break;
     case 'chain':        await resolveChain(user, live); break;
     case 'delayPlay':    placeDelayed(live[0], card); finishUse(user, card); return;
@@ -1309,7 +1389,7 @@ const SKILLS = {
     // 是奶扣【治愈】（要弃一张牌才能回复 1 点）的严格上位替代。
     const t = targets[0];
     if (!t || t === p) return;
-    await heal(t, 1, '共情');
+    await heal(t, 1, '共情', p);
     await drawCards(p, 1, '共情');
   },
   /* R-08 */
@@ -1319,7 +1399,7 @@ const SKILLS = {
     const sel = await Ask(p, { kind:'selectCards', prompt:'【透析】弃置两张牌', from:'any', min:2, max:2 });
     if (!sel.cards || sel.cards.length < 2) return;
     payCards(p, sel.cards);
-    await heal(t, 1, '透析');
+    await heal(t, 1, '透析', p);
     await drawCards(t, 1, '透析');
   },
   /* R-09 */
@@ -1437,7 +1517,7 @@ const SKILLS = {
     const sel = await Ask(p, { kind:'selectCards', prompt:'【治愈】弃置一张牌', from:'any', min:1, max:1 });
     if (!sel.cards || !sel.cards.length) return;
     payCards(p, sel.cards);
-    await heal(t, 1, '治愈');
+    await heal(t, 1, '治愈', p);
   },
   /* R-18 */
   async 鸽王(p, targets){
@@ -1563,6 +1643,25 @@ async function runTurn(p){
   await sleep(420);            // 回合之间留白，避免"刚看完就换人"
 }
 
+/**
+ * 【论文查重】传给下一位存活角色。
+ *
+ * 两条路都走这里：判定没命中，和判定被辅导员签字抵消 ——
+ * 两者都等于"这次没劈中"，而这张牌的身份就是热土豆，没劈中就得传下去。
+ *
+ * 规则书 6.5 说得明确：这个"移动"**不是"使用"** ——
+ * 不触发"成为目标"类技能、不进响应窗口、也不能被再一张辅导员签字抵消。
+ */
+function passZhuancha(from, card, why){
+  const alive = alivePlayers();
+  const i = alive.indexOf(from);
+  const next = alive[(i + 1) % alive.length];
+  if (next && next !== from){
+    next.judge.push(card);
+    log((why ? why + '：' : '') + '论文查重移动到 ' + next.name + ' 的通知栏', 'sys');
+  } else toDiscard([card]);
+}
+
 async function judgePhase(p){
   // 断网标记
   if (p.marks.net > 0){
@@ -1581,13 +1680,22 @@ async function judgePhase(p){
   while (p.judge.length){
     if (!p.alive) return;
     const card = p.judge[p.judge.length - 1];   // 后进先出
-    // 延时牌**真正生效的时刻就是现在** —— 辅导员签字只在这里开放，
-    // 放置的时候不问（规则书原来写的是"放置时也可被无效"，按房规收紧到生效时）
+    // 辅导员签字在**翻开抽签牌之前**问，而不是等看到结果再问 ——
+    // 这就是闪电的规矩：无懈可击必须抢在判定牌翻开之前，翻开了就只剩改判窗口。
+    // （"放置时也开放"那条规则书原来写过，按房规砍掉了，见修订 2。）
+    // 注意问的时候还不知道会不会生效：问完才 drawFromDeck()。这是对的，别调换。
     if (await nullifyCheck(p, card, { judge: true })){
       const ni = p.judge.indexOf(card);
       if (ni >= 0) p.judge.splice(ni, 1);
-      toDiscard([card]);
       log('【' + card.name + '】被辅导员签字抵消，不进行查考勤', 'sys');
+      if (card.name === '论文查重'){
+        // 签字抵消掉的是"受到 3 点雷电伤害"**这一次判定**，不是这张牌本身。
+        // 它的身份是热土豆：没劈中就该传给下家（规则书 5.3 F8'）。
+        // 这里以前和别的延时牌一样直接弃掉 —— 等于把整张牌的存在感抹了。
+        passZhuancha(p, card, '判定被抵消');
+      } else {
+        toDiscard([card]);
+      }
       if (window.UI) UI.render();
       await sleep(200);
       continue;
@@ -1614,14 +1722,8 @@ async function judgePhase(p){
         toDiscard([card, jc]);
         await damage(p, 3, null, 'thunder');
       } else {
-        const alive = alivePlayers();
-        const i = alive.indexOf(p);
-        const next = alive[(i + 1) % alive.length];
         toDiscard([jc]);
-        if (next && next !== p){
-          next.judge.push(card);
-          log('未命中：论文查重移动到 ' + next.name + ' 的通知栏', 'sys');
-        } else toDiscard([card]);
+        passZhuancha(p, card, '未命中');
       }
     } else {
       toDiscard([card, jc]);
@@ -1810,6 +1912,9 @@ function initGame(opts){
   // 谁救过院长（公开信息，AI 靠它推断"这人更像教务"）
   // 以前 AI 读的是 p._memo.rescue，但 _memo 全项目只读不写，那个判断从来没生效过。
   G.rescueLog = {};
+  // 赛后评分用：每人的 伤害 / 击杀 / 救援 / 治疗 / 技能次数
+  G.stats = {};
+  G.killLog = [];
   const n = opts.count;
   const total = D.CHARACTERS.length;
   // 哪些座位是真人在操作。单机/热座时就是 [0]。
@@ -2031,7 +2136,10 @@ async function gameLoop(){
       const idx = (G.turnSeat + i) % G.players.length;
       if (G.players[idx].alive){ next = idx; break; }
     }
-    if (next === G.turnSeat){ G.over = true; checkVictory(); break; }
+    // 只剩一个人活着了，没人可轮 —— 胜负交给 checkVictory 判。
+    // 注意别在这里先写 G.over：checkVictory 和 endGame 开头都有 `if (G.over) return`，
+    // 先写就等于把它们整个跳过，结果是**不弹结算界面**就黑在那里。
+    if (next === G.turnSeat){ checkVictory(); break; }
     const wrapped = next <= G.turnSeat;
     G.turnSeat = next;
     if (G.players.filter(x=>x.alive).length <= 1) { checkVictory(); if (G.over) break; }
@@ -2039,10 +2147,24 @@ async function gameLoop(){
       G.round++;
       G.firstRound = false;
       log('===== 第 ' + G.round + ' 轮开始 =====', 'big');
-      if (G.round > 40){ logBig('回合数过多，判定平局'); G.over = true; break; }
+      // 打太久了判平局。这里同样必须走 endGame（它自己会写 G.over 并弹结算）——
+      // 以前是先写 G.over，于是 endGame 直接在门口返回：一局磨到 40 轮之后
+      // 界面就那么停在棋盘上，既没结算也没法继续。
+      if (G.round > 40){ endGame(null, '回合数过多，判定平局'); break; }
     }
   }
-  if (!G.over){ G.over = true; checkVictory(); }
+  // 收尾。循环有两种退出方式：这局真的打完了，或者 G.gen 变了（有人开了新的一局）。
+  // 后一种情况下本局已经作废，**绝不能**再去动 G —— 那会把刚开的新局标成已结束，
+  // 表现是新局一进去就"游戏结束"、什么都点不动。
+  // 触发场景很日常：一局还没跑完（比如正好轮到电脑）就点「再来一局」或「新手教学局」。
+  //
+  // 还留在这里则说明循环没停在"已分出胜负"上（某个 break 漏设了 G.over）：
+  // 先让 checkVictory 判，判不出来就当平局收尾 —— 无论如何都得有个结算界面。
+  // 注意别自己先写 G.over：checkVictory / endGame 开头都有 `if (G.over) return`。
+  if (G.gen === myGen && !G.over){
+    checkVictory();
+    if (!G.over) endGame(null, '对局结束');
+  }
 }
 
 window.Engine = {
@@ -2054,7 +2176,9 @@ window.Engine = {
   assignRole, finalizeRoles, pendingRoleSeats, dealInitialHands,
   // 身份轮抽（模式 B）
   assignIdentity, advanceIdentityDraft, pendingIdentitySeats, identityPoolLeft,
+  // 赛后评分（供自测与扩展使用）
+  buildScoreboard, SCORE_RULE,
   // 供自检与扩展使用
-  isImmuneByCard, canUseAttack, allZoneCards, countPayable
+  isImmuneByCard, canUseAttack, allZoneCards, countPayable, judgePhase
 };
 })();

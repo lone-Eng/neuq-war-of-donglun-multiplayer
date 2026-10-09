@@ -54,6 +54,10 @@
     // 把节奏拉到极慢，让 AI 在截图前基本停住不动 ——
     // 否则虚拟时钟会快进掉好几轮，截图时多半正好弹着一个询问框、整个桌面被压暗。
     if (win.G) win.G.speed = 400;
+    // ?over=1：直接结算这局，用来截赛后评分 / MVP 界面
+    if (q.get('over') && win.Engine && win.G){
+      win.Engine.endGame(q.get('over') === 'draw' ? null : 'student', '预览用');
+    }
     // 让重绘跑一轮（布局偏好是懒加载的）
     if (win.UI && win.UI.render) win.UI.render();
 

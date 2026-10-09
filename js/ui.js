@@ -49,6 +49,7 @@ UI.clearThinking = function(){
  *           onConfirm(chosen), onCancel()}
  */
 function beginTargeting(opts){
+  if (window.Tutorial) Tutorial.notify('targeting', {});
   targeting = Object.assign({ min:1, max:1, chosen:[] }, opts);
   if (!targeting.cands || !targeting.cands.length){ targeting = null; return false; }
   // 只有一个合法目标且只要 1 个：直接选中，省一次点击
@@ -665,6 +666,7 @@ UI.modal = modal;
 let pendingResolve = null;
 
 UI.askHuman = function(req){
+  if (window.Tutorial) Tutorial.notify('ask', { req: req });
   return new Promise(resolve => {
     const done = r => {
       if (pendingResolve === done) pendingResolve = null;
@@ -954,24 +956,104 @@ UI.showJudge = function(card, jc){
   setTimeout(() => { if (layer.contains(box)) closeModal(); }, wait);
 };
 
+/* ---------------- 本机战绩（存在浏览器里，跨局累计） ---------------- */
+const RECORD_KEY = 'dqk_record';
+function readRecord(){
+  const d = { games:0, wins:0, mvps:0, best:0 };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem(RECORD_KEY) || '{}')); }
+  catch (e){ return d; }
+}
+/** 记一笔本机战绩。旁观席（humanSeat < 0）不算。 */
+function recordResult(humanWin, board){
+  if (G.humanSeat < 0) return readRecord();
+  const rec = readRecord();
+  rec.games++;
+  if (humanWin) rec.wins++;
+  if (board && board.mvpSeat === G.humanSeat) rec.mvps++;
+  const mine = board && board.rows.find(r => r.seat === G.humanSeat);
+  if (mine && mine.score > rec.best) rec.best = mine.score;
+  try { localStorage.setItem(RECORD_KEY, JSON.stringify(rec)); } catch (e){ /* 忽略 */ }
+  return rec;
+}
+
 /* ---------------- 结束界面 ---------------- */
-UI.showOver = function(winner, reason, humanWin){
+UI.showOver = function(winner, reason, humanWin, board){
+  if (window.Tutorial) Tutorial.notify('over', {});
   const title = document.getElementById('over-title');
   const body = document.getElementById('over-body');
   title.textContent = humanWin ? '你赢了' : (winner ? '你输了' : '平局');
   title.style.color = humanWin ? '#5ac47e' : '#e05a5a';
-  let html = '<div class="ov-line">' + (winner ? D.IDENTITIES[winner].name + '阵营胜利' : '平局') + '　<span style="color:#8fa0b5">（' + reason + '）</span></div>';
-  html += '<div class="ov-line" style="margin-top:14px;color:#8fa0b5">身份揭示</div>';
+
+  const mySeat = G.humanSeat;
+  // 先记战绩，再渲染（渲染里要显示累计结果）
+  const rec = (mySeat >= 0) ? recordResult(humanWin, board) : readRecord();
+
+  let html = '<div class="ov-line">' +
+    (winner ? D.IDENTITIES[winner].name + '阵营胜利' : '平局') +
+    '　<span style="color:#8fa0b5">（' + reason + '）</span></div>';
+
+  /* ---- MVP ---- */
+  if (board && board.mvpSeat >= 0){
+    const m = board.rows.find(r => r.seat === board.mvpSeat);
+    const mine = (board.mvpSeat === mySeat);
+    html += '<div class="ov-mvp' + (mine ? ' me' : '') + '">' +
+      '<span class="mvp-badge">MVP</span>' +
+      '<span class="mvp-who">' + (m.seat + 1) + ' 号位　' + m.name + '</span>' +
+      '<span class="mvp-score">' + m.score + ' 分</span>' +
+      (mine ? '<span class="mvp-you">就是你 🎉</span>' : '') +
+      '</div>';
+  }
+
+  /* ---- 评分表 ---- */
+  if (board && board.rows){
+    html += '<div class="ov-sec">评分</div>' +
+      '<table class="score-table"><thead><tr>' +
+      '<th>座位</th><th>角色</th><th>身份</th><th>结果</th>' +
+      '<th>伤害</th><th>击杀</th><th>救援</th><th>治疗</th><th>技能</th><th>总分</th>' +
+      '</tr></thead><tbody>';
+    board.rows.forEach(r => {
+      const id = D.IDENTITIES[r.identity] || { name:'?', cls:'' };
+      const cls = [];
+      if (r.seat === board.mvpSeat) cls.push('mvp');
+      if (r.seat === mySeat) cls.push('me');
+      if (r.win) cls.push('won');
+      html += '<tr class="' + cls.join(' ') + '">' +
+        '<td>' + (r.seat + 1) + '</td>' +
+        '<td>' + r.name + '</td>' +
+        '<td class="' + id.cls + '">' + id.name + '</td>' +
+        '<td>' + (r.win ? '<span class="w">胜</span>' : (winner ? '负' : '平')) + '</td>' +
+        '<td>' + r.stats.dmg + '</td>' +
+        '<td>' + r.stats.kills + '</td>' +
+        '<td>' + r.stats.saves + '</td>' +
+        '<td>' + r.stats.heals + '</td>' +
+        '<td>' + r.stats.skills + '</td>' +
+        '<td class="sc">' + r.score + '</td></tr>';
+    });
+    html += '</tbody></table>' +
+      '<p class="score-note">胜利 +30　造成伤害 每点 +3　击杀 +15　救援濒死 +12　' +
+      '治疗他人 每点 +4　发动技能 每次 +2（上限 20）　存活到终局 +8</p>';
+  }
+
+  /* ---- 身份揭示 ---- */
+  html += '<div class="ov-sec">身份揭示</div>';
   G.players.forEach(p => {
     const id = D.IDENTITIES[p.identity];
-    const me = p.seat === G.humanSeat;
+    const me = p.seat === mySeat;
     const win = (winner === 'dean' && (p.identity === 'dean' || p.identity === 'staff')) ||
                 (winner === 'student' && p.identity === 'student') ||
                 (winner === 'mole' && p.identity === 'mole');
     html += '<div class="ov-line' + (win ? ' ov-win' : '') + '">' +
-      (p.seat+1) + ' 号位　' + p.char.name + '（' + p.char.title + '）　' +
+      (p.seat + 1) + ' 号位　' + p.char.name + '（' + p.char.title + '）　' +
       '<b>' + id.name + '</b>　' + (p.alive ? '存活' : '死亡') + (me ? '　← 你' : '') + (win ? '　✔ 胜利' : '') + '</div>';
   });
+
+  /* ---- 本机战绩 ---- */
+  if (mySeat >= 0 && rec.games > 1){
+    html += '<div class="ov-sec">本机战绩</div>' +
+      '<div class="ov-line">共 ' + rec.games + ' 局　胜 <b>' + rec.wins + '</b>　' +
+      'MVP <b>' + rec.mvps + '</b> 次　最高分 <b>' + rec.best + '</b></div>';
+  }
+
   body.innerHTML = html;
   UI.show('over');
 };

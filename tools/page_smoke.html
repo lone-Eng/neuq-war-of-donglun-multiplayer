@@ -150,6 +150,74 @@
            d.getElementById('sidebar').className);
       }
       ok('进游戏后没有 JS 错误', errs.length === 0, errs.join(' | '));
+      return sleep(100);
+    }).then(function () {
+      // ---- 新手教学局：新人真正会走的那条路 ----
+      // 这一段以前没人验过，而它恰好是最经不起坏的一环：
+      // 教学是新手见到的第一个界面，它坏了人就直接走了。
+      // js_test 只跑脚本不加载 CSS，所以「提示条是不是真的看得见」只有这里查得出来。
+      //
+      // 从牌局里点「再来一局」退回开始界面 —— 这条路径本身也是真实的
+      // （新手打完一局正式对局，回头点教学），顺手一起验了。
+      var again = d.getElementById('btn-again');
+      if (again) again.click();
+      return sleep(400);
+    }).then(function () {
+      ok('点「再来一局」能退回开始界面', !!d.querySelector('#screen-start.active'),
+         d.querySelector('.screen.active') ? d.querySelector('.screen.active').id : '(none)');
+      var bt = d.getElementById('btn-tutorial');
+      ok('开始界面有「新手教学局」按钮', !!bt);
+      ok('「新手教学局」按钮有独立样式（跟单机/联机区分得开）',
+         !!bt && bt.className.indexOf('tut') >= 0, bt && bt.className);
+      if (bt) bt.click();
+      return sleep(1200);
+    }).then(function () {
+      ok('点「新手教学局」直接进了游戏界面（不经过选角）',
+         !!d.querySelector('#screen-game.active'),
+         d.querySelector('.screen.active') ? d.querySelector('.screen.active').id : '(none)');
+
+      var bar = d.getElementById('tutorial-bar');
+      ok('教学提示卡弹出来了', !!bar && !bar.classList.contains('hide'));
+      // 关键的一条：CSS 真的把它排到版面上了。只查 class 是不够的 ——
+      // 样式表里少一条规则，class 照样是对的，人却什么都看不见。
+      ok('提示卡真的占了版面（不是被 CSS 藏了）',
+         !!bar && bar.offsetHeight > 0, bar ? ('offsetHeight=' + bar.offsetHeight) : 'no bar');
+      var txt = bar && bar.querySelector('.tut-text');
+      ok('第一条提示有内容', !!txt && txt.textContent.replace(/\s/g, '').length > 10,
+         txt && txt.textContent);
+
+      // 它得是**手牌上方那张大卡片**，不是屏幕最顶上一条通栏细边 ——
+      // 细边会被当成装饰无视掉，那样教学就等于没做。
+      ok('教学卡在手牌上方，不在顶栏那一条', !!bar && !!bar.closest('#bottom'));
+      ok('卡片带「教学」角标', !!bar && !!bar.querySelector('.tut-badge'));
+      // 旧细边实测约 43px；这条门槛就是拿来卡住"退回细边"的
+      ok('卡片够高（不是一条细边）', !!bar && bar.offsetHeight >= 50,
+         bar ? ('offsetHeight=' + bar.offsetHeight) : 'no bar');
+
+      ok('教学局是 4 人局（最短的完整对局）',
+         d.querySelectorAll('#opponents .player-panel').length === 4,
+         d.querySelectorAll('#opponents .player-panel').length);
+      ok('电脑被切成简单档（不会精准集火秒了新手）',
+         w.AI && w.AI.getLevel && w.AI.getLevel() === 'easy',
+         w.AI && w.AI.getLevel && w.AI.getLevel());
+
+      // 起手牌固定成四张，一张教一件事
+      var hand = [].map.call(d.querySelectorAll('#my-hand .card .c-name'),
+                             function (el) { return el.textContent.trim(); });
+      var want = ['上课点名', '代课', '请假条', '借笔记'];
+      var missing = want.filter(function (n) { return hand.indexOf(n) < 0; });
+      ok('起手牌是那四张教学牌', missing.length === 0,
+         '手牌=[' + hand.join(',') + '] 缺=' + missing.join(','));
+
+      // 「知道了」得真的能把提示条收掉，否则它会一直挂着挡视线
+      var nx = d.getElementById('tut-next');
+      if (nx) nx.click();
+      return sleep(200);
+    }).then(function () {
+      ok('点「知道了」能收起提示条',
+         d.getElementById('tutorial-bar').classList.contains('hide'),
+         d.getElementById('tutorial-bar').className);
+      ok('走完教学这段没有 JS 错误', errs.length === 0, errs.join(' | '));
       done();
     }).catch(function (e) {
       ok('冒烟测试本身没有抛异常', false, (e && e.message) || String(e));

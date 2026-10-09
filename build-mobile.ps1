@@ -19,7 +19,7 @@ foreach ($p in @($stylePath, $mobilePath, $indexPath)) {
 $mainCss = Get-Content $stylePath  -Raw -Encoding UTF8
 $mobCss  = Get-Content $mobilePath -Raw -Encoding UTF8
 
-$jsFiles = @('data','fx','ai','engine','ui','selftest','net','main')
+$jsFiles = @('data','fx','ai','engine','ui','selftest','net','tutorial','main')
 foreach ($n in $jsFiles) {
   $p = Join-Path $root "js\$n.js"
   if (-not (Test-Path $p)) { throw "missing script: $p" }
@@ -111,7 +111,7 @@ foreach ($ch in $patchBlock.ToCharArray()) { if ([int]$ch -gt 127) { $patchAscii
 
 $checks = [ordered]@{
   'inline-style'  = ($text -match '<style>')
-  'inline-scripts'= ([regex]::Matches($text, '<script>').Count -ge 9)
+  'inline-scripts'= ([regex]::Matches($text, '<script>').Count -ge 10)
   'deck-data'     = ($text -match 'buildDeck')
   'card-detail'   = ($text -match 'CARD_DETAIL')
   'rule-engine'   = ($text -match 'function useCard')
@@ -136,3 +136,17 @@ foreach ($k in $checks.Keys){
 }
 if ($bad -eq 0){ Write-Host "ALL CHECKS PASSED" -ForegroundColor Green }
 else { Write-Host ("$bad check(s) failed") -ForegroundColor Yellow }
+
+# Also refresh the source bundle. It is what lets a page opened as file://
+# (i.e. index.html double-clicked) export a shareable replay -- such a page may
+# not fetch its own js/ files, so the sources ship as a loadable script.
+# Regenerating it here means one command keeps both artifacts in sync; the test
+# suite fails loudly if it is ever left stale.
+$srcBuilder = Join-Path $root 'tools\build-sources.ps1'
+if (Test-Path $srcBuilder) {
+  Write-Host ""
+  & $srcBuilder
+} else {
+  Write-Host ""
+  Write-Host ("skipped source bundle: " + $srcBuilder + " not found") -ForegroundColor Yellow
+}

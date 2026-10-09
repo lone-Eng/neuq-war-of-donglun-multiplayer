@@ -34,11 +34,32 @@ function cardValue(c, me){
   return v;
 }
 
+/* ---------------- 电脑强度 ----------------
+ * 三档**只调参数，不换决策逻辑**：
+ *   noise     评分里的随机项幅度。越大越常做出"次优选择"。
+ *   inference 身份推断的权重。0.35 = 只看出个大概，1.7 = 精算。
+ *   mistake   出牌阶段"低级错误"的概率：跳过最优解，甚至直接过。
+ *   blunder   响应窗口"漏时机"的概率：该打代课/辅导员签字时没打。
+ *
+ * 注意"不打自己人"**不随难度变化**（见下面的 threat 包装）——
+ * 那是基本能力，不是难度；简单档要是会打队友就成了"坏掉"而不是"简单"。
+ */
+const LEVELS = {
+  easy:   { key:'easy',   name:'简单', noise:46, inference:0.35, mistake:0.30, blunder:0.22 },
+  normal: { key:'normal', name:'普通', noise:10, inference:1.00, mistake:0.07, blunder:0.05 },
+  hard:   { key:'hard',   name:'困难', noise:3,  inference:1.70, mistake:0.00, blunder:0.00 }
+};
+let aiLevel = 'normal';
+function lv(){ return LEVELS[aiLevel] || LEVELS.normal; }
+function setLevel(k){ aiLevel = LEVELS[k] ? k : 'normal'; return aiLevel; }
+/** 评分用的随机项（幅度由难度决定） */
+function J(){ return Math.random() * lv().noise; }
+
 /* ---------------- 简易身份推断 ---------------- */
 function aliveCount(id){ return G.players.filter(p => p.alive && p.identity === id).length; }
 
 /** 仇恨度：越高越想打他（-100 = 绝对不打） */
-function threat(ai, t){
+function threatRaw(ai, t){
   if (t === ai || !t.alive) return -100;
   const me = ai.identity, him = t.identity;
   const known = t.revealed || him === 'dean';   // 死亡揭示 / 院长公开
@@ -84,13 +105,24 @@ function threat(ai, t){
   if (known && him === 'staff') return (sta > stu) ? 70 : -60;
   return 30;
 }
+/**
+ * 对外用的威胁度：按难度缩放"身份推断"的强度。
+ * 已知队友（raw <= -60，比如院方对公开的院长、对已揭示的同阵营）**不缩放** ——
+ * "不打自己人"是基本能力，不该随难度变化。
+ */
+function threat(ai, t){
+  const raw = threatRaw(ai, t);
+  const w = lv().inference;
+  if (w === 1 || raw <= -60) return raw;
+  return Math.round(raw * w);
+}
 function isFriend(ai, t){ return threat(ai, t) < -20; }
 
 /* ---------------- 选择目标 ---------------- */
 function pickBestTarget(ai, cands){
   let best = null, bestScore = -999;
   for (const t of cands){
-    const s = threat(ai, t) + Math.random() * 18 - (t.hp <= 1 ? 6 : 0);
+    const s = threat(ai, t) + J() * 1.8 - (t.hp <= 1 ? 6 : 0);
     if (s > bestScore){ bestScore = s; best = t; }
   }
   return best;
@@ -235,7 +267,7 @@ function decidePlay(me, req){
       chosen = [best];
     }
     const lenBonus = card.type === 'delayed' ? -8 : 0;
-    acts.push({ action:{ type:'card', card, targets: chosen }, score: scoreCard(me, card, chosen) + lenBonus + Math.random()*10 });
+    acts.push({ action:{ type:'card', card, targets: chosen }, score: scoreCard(me, card, chosen) + lenBonus + J() });
   }
   // 武器转化技：电风扇 / 粉笔
   for (const s of req.skills){
@@ -255,7 +287,7 @@ function decidePlay(me, req){
     if (!tg.length) continue;
     const best = pickBestTarget(me, tg);
     acts.push({ action:{ type:'virtual', cost, asName, dmg, suit, rank, targets:[best] },
-      score: 72 + threat(me, best) * 0.3 + Math.random() * 8 });
+      score: 72 + threat(me, best) * 0.3 + J() * 0.8 });
   }
   // 普通技能
   for (const s of req.skills){
@@ -276,10 +308,20 @@ function decidePlay(me, req){
       chosen = chosen.filter(Boolean);
       if (!chosen.length) continue;
     }
-    acts.push({ action:{ type:'skill', skill:s, targets: chosen }, score: scoreSkill(me, s, chosen) + Math.random()*8 });
+    acts.push({ action:{ type:'skill', skill:s, targets: chosen }, score: scoreSkill(me, s, chosen) + J() * 0.8 });
   }
   if (!acts.length) return { action:{ type:'end' } };
   acts.sort((a,b) => b.score - a.score);
+
+  // 难度：简单档偶尔"低级失误" —— 一半概率干脆结束阶段，一半概率
+  // 从前几个候选里随便挑一个（而不是分最高的那个）。
+  // 这是新手最典型的两类失误，比"随机乱打"更像真人。
+  const L = lv();
+  if (L.mistake > 0 && Math.random() < L.mistake){
+    if (Math.random() < 0.5) return { action:{ type:'end' } };
+    return acts[Math.floor(Math.random() * Math.min(acts.length, 4))];
+  }
+
   const top = acts[0];
   if (top.score < 34) return { action:{ type:'end' } };
   return top;
@@ -316,6 +358,12 @@ function decideChoice(me, req){
     }
     return { option:'no' };
   }
+
+  // 难度：简单档会"漏时机" —— 该打代课/辅导员签字/发动触发技的时候没打出来。
+  // 放在濒死处理**之后**：跳过自救等于直接送死，那不像"简单"而像"坏掉"。
+  const L = lv();
+  if (L.blunder > 0 && opts.includes('no') && Math.random() < L.blunder) return { option:'no' };
+
   // 代课
   if (opts.includes('card') && label.includes('打出代课')) return { option:'card' };
   if (opts.includes('skill_popi')) return { option:'skill_popi' };
@@ -427,6 +475,8 @@ function pickShown(me, cards){
 function pickTarget(me, cands){ return pickBestTarget(me, cands); }
 
 window.AI = { decide, pickShown, pickTarget, threat, cardValue, isFriend,
+  // 电脑强度（'easy' | 'normal' | 'hard'）
+  setLevel, getLevel: () => aiLevel, LEVELS,
   // 测试钩子：AI 是靠正则从**中文提示语**里抠玩家名字的，
   // 改了 engine.js 的文案就可能静默失效。暴露出来让自测能钉住这个耦合。
   _parseTargetName: parseTargetName, _parseDyingTarget: parseDyingTarget };

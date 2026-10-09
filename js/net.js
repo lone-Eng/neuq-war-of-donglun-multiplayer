@@ -599,7 +599,7 @@ Net.rev = 0;
 Net.session = null;        // {base, code, peer, token, name, isHost}
 Net.roster = [];           // [{peer, name, spectator, seat, online, self}]
 Net.mySeat = -1;           // 客户端自己坐哪（旁观 = -1）
-Net.config = { count: 5, deal: 3, mode: 'A', protect: true, hostPlays: true };
+Net.config = { count: 5, deal: 3, mode: 'A', protect: true, hostPlays: true, aiLevel: 'normal' };
 Net.lastResult = null;
 
 Net.isOnline = function(){ return !!(Net.session && Net.transport && Net.transport.running); };
@@ -834,6 +834,13 @@ function renderRoom(status){
           }).join('') +
         '</div></div>' +
         '<p class="hint" id="net-mode-hint">' + modeHint(Net.config.mode) + '</p>' +
+        '<div class="form-row"><label>电脑强度</label><div class="btn-group" id="net-ai">' +
+          [['easy', '简单'], ['normal', '普通'], ['hard', '困难']].map(function (m) {
+            return '<button data-l="' + m[0] + '"' +
+              (Net.config.aiLevel === m[0] ? ' class="on"' : '') + '>' + m[1] + '</button>';
+          }).join('') +
+        '</div></div>' +
+        '<p class="hint">' + Net.aiHint(Net.config.aiLevel) + '</p>' +
         '<div class="btn-group">' +
           '<button id="net-plays" class="toggle ' + (Net.config.hostPlays ? 'on' : '') + '">房主也参战</button>' +
           '<button id="net-protect" class="toggle ' + (Net.config.protect ? 'on' : '') + '">保护轮</button>' +
@@ -864,6 +871,12 @@ function renderRoom(status){
   document.querySelectorAll('#net-mode button').forEach(b => {
     b.addEventListener('click', () => {
       Net.config.mode = b.dataset.m;
+      broadcastLobby();
+    });
+  });
+  document.querySelectorAll('#net-ai button').forEach(b => {
+    b.addEventListener('click', () => {
+      Net.setAiLevel(b.dataset.l);      // 电脑跑在房主这边，所以由房主定
       broadcastLobby();
     });
   });
@@ -906,6 +919,7 @@ function broadcastLobby(){
       count: Net.config.count,
       hostPlays: Net.config.hostPlays,
       protect: Net.config.protect,
+      aiLevel: Net.config.aiLevel,
       roster: Net.roster.map(x => ({
         name: x.name, seat: x.seat, host: !!x.host, online: !!x.online,
         spectator: !!x.spectator, self: x.peer === r.peer
@@ -1053,6 +1067,8 @@ function hostStartGame(){
   if (!humans.length){ window.UI.toast('至少要有一个人参战', 'warn'); return; }
   Net.started = true;
   Net.config.count = Math.max(Net.config.count, humans.length);
+  // 电脑跑在房主这边，开局前把强度落实一次
+  Net.setAiLevel(Net.config.aiLevel);
 
   const humanSeats = humans.map(r => r.seat).sort((a, b) => a - b);
   Net.rolePick = {};
@@ -1204,10 +1220,12 @@ function hostGameOver(){
   const res = Net.lastResult || { winner: null, reason: '' };
   const identities = G.players.map(p => p.identity);
   const seats = G.players.map(p => p.seat);
+  // 评分板一起发过去 —— 它是全公开的赛后统计，每个客户端都该看到同一份
+  const board = G.scoreboard || null;
   Net.roster.forEach(r => {
     sendTo(r.peer, {
       t: 'over', winner: res.winner, reason: res.reason,
-      seats: seats, identities: identities
+      seats: seats, identities: identities, scoreboard: board
     });
   });
   Net.started = false;
@@ -1555,6 +1573,221 @@ Net.saveReplay = function(){
   window.UI.toast('复盘已保存（' + Net.rec.frames.length + ' 帧）', 'good');
 };
 
+/* ---- 导出分享版 HTML ----
+ * 直接把这一局打成一个**自带整个游戏**的 .html：对方点开就能放，
+ * 不用装东西、不用联网、不用"先另存再选文件打开"。
+ *
+ * 做法：把当前页面用的脚本和样式源码抓出来，配上一副干净的 DOM 骨架，
+ * 再塞进复盘数据 + 一段只负责起回放的引导脚本。
+ */
+
+/**
+ * 从页面里找出 js/ 和 css/ 的真实目录。
+ * 不能写死 'js/' —— 页面在子目录下（比如 tools/）会取错，
+ * 部署到子路径时也会出错。从 <script src> / <link href> 反推最稳。
+ */
+function jsBase(){
+  const s = document.querySelector('script[src*="net.js"]');
+  const src = s ? (s.getAttribute('src') || '') : '';
+  const i = src.lastIndexOf('/');
+  return i >= 0 ? src.slice(0, i + 1) : 'js/';       // 'js/' 或 '../js/'
+}
+function cssBase(){
+  const l = document.querySelector('link[href$="style.css"]');
+  const href = l ? (l.getAttribute('href') || '') : '';
+  const i = href.lastIndexOf('/');
+  if (i >= 0) return href.slice(0, i + 1);
+  return jsBase().replace(/js\/$/, '') + 'css/';
+}
+
+/**
+ * 兜底源码包：js/sources.js，由 tools/build-sources.ps1 生成。
+ *
+ * 只为一件事存在 —— 页面是 file:// 打开的。那时浏览器不允许网页读自己的文件，
+ * fetch 直接失败，"导出分享版"就一个字的源码都拿不到。而 <script src> 仍然允许，
+ * 所以把源码另存成一份**能被加载的脚本**，需要时插进来。
+ *
+ * 走 http 时永远不碰它：fetch 读的是真文件，不存在过期问题。
+ * 也就是说它过期只影响"双击 index.html 再导出"这一条路 —— 由测试卡着。
+ */
+let sourcesPromise = null;
+function loadSources(){
+  if (sourcesPromise) return sourcesPromise;
+  sourcesPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = jsBase() + 'sources.js';
+    s.onload = () => {
+      if (window.DQK_SOURCES && window.DQK_SOURCES.js) resolve(window.DQK_SOURCES);
+      else reject(new Error('源码包内容不对'));
+    };
+    s.onerror = () => reject(new Error('加载不到源码包'));
+    (document.head || document.documentElement).appendChild(s);
+  });
+  return sourcesPromise;
+}
+
+/** 抓脚本源码。单文件版（手机版）是内联的，普通版走 fetch，file:// 走源码包。 */
+async function collectJs(){
+  const want = ['data', 'fx', 'ai', 'engine', 'ui', 'net'];
+  const got = {};
+  // 1) 内联脚本：build-mobile.ps1 会写成 /* ===== data.js ===== */ 这种标记
+  document.querySelectorAll('script:not([src])').forEach(s => {
+    const m = /\/\*\s*=====\s*([A-Za-z]+)\.js\s*=====\s*\*\//.exec((s.textContent || '').slice(0, 120));
+    if (m && want.indexOf(m[1]) >= 0 && !got[m[1]]) got[m[1]] = s.textContent;
+  });
+  // 2) 外链脚本：同源 fetch
+  const base = jsBase();
+  for (const n of want){
+    if (got[n]) continue;
+    try {
+      const r = await fetch(base + n + '.js', { cache: 'no-store' });
+      if (r.ok) got[n] = await r.text();
+    } catch (e){ /* file:// 下会失败，交给第 3 步 */ }
+  }
+  // 3) 还是缺 → 页面读不到自己的文件，退回源码包
+  if (want.some(n => !got[n])){
+    const pack = await loadSources().catch(() => null);
+    if (pack) want.forEach(n => { if (!got[n] && pack.js[n]) got[n] = pack.js[n]; });
+  }
+  return got;
+}
+
+async function collectCss(){
+  let css = '';
+  document.querySelectorAll('style').forEach(s => { css += s.textContent + '\n'; });
+  const base = cssBase();
+  for (const f of ['style.css', 'mobile.css']){
+    try {
+      const r = await fetch(base + f, { cache: 'no-store' });
+      if (r.ok){
+        const t = await r.text();
+        if (css.indexOf(t.slice(0, 60)) < 0) css += t + '\n';
+      }
+    } catch (e){ /* 单文件版没有这两个文件，正常 */ }
+  }
+  // index.html 里没有内联 <style>，所以 file:// 下这里会是空的 —— 同样退回源码包。
+  // 手机单文件版是靠内联的 <style> 拿到的，不会走到这一步。
+  if (!css.trim()){
+    const pack = await loadSources().catch(() => null);
+    if (pack && pack.css) css = pack.css;
+  }
+  return css;
+}
+
+/**
+ * 内联进 script 标签之前的保命处理：把源码里"裸的脚本结束标签"打断成 `<\\/script`。
+ *
+ * 浏览器解析 HTML 时只认那一个序列，**注释里出现也算**。一旦源码里出现，
+ * 这个脚本块会被提前结束，剩下的半截代码变成 HTML 文本 ——
+ * 而语法不完整的整块 JS 会**完全不执行**，表现就是"导出的文件白屏"，极难排查。
+ * 我自己就踩过一次：一句注释里带了这个标签，整个 net.js 没跑起来。
+ * （`build-mobile.ps1` 里也有同样意图的守卫，但那只管单文件版。）
+ *
+ * 换成带反斜杠的写法在三种上下文里都安全：
+ *   字符串里 → 求值仍是原序列；注释里 → 无害；正则里 → \/ 就是转义的斜杠。
+ */
+function safeInline(code){
+  return String(code).replace(/<\/(script)/gi, '<\\/$1');
+}
+
+/** 复制一份干净的游戏 DOM 骨架（清掉运行时渲染出来的内容） */
+function cleanShell(){
+  const app = document.getElementById('app');
+  if (!app) return '';
+  const clone = app.cloneNode(true);
+  // 只清"内容全是运行时渲染出来"的容器。
+  // 注意别清 #replay-bar / #tutorial-bar / #host-gone-bar —— 那几个是
+  // **固定按钮 + 一段动态文字**，整块清掉会把按钮也清没，
+  // 之后 un-hide 出来的是个高度为 0 的空条（复盘条就这样消失过一次）。
+  ['#opponents', '#my-hand', '#actions', '#log', '#play-stack', '#target-bar',
+   '#spectator-bar', '#net-box', '#role-options', '#draft-options',
+   '#identity-preview', '#over-body'].forEach(sel => {
+    const el = clone.querySelector(sel);
+    if (el) el.innerHTML = '';
+  });
+  // 骨架根节点上的内联 display 一律清掉 —— 正常情况下没有，
+  // 但任何把它藏起来的样式都会被原样克隆进导出文件，表现就是"打开一片黑"
+  clone.style.display = '';
+  clone.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const game = clone.querySelector('#screen-game');
+  if (game) game.classList.add('active');
+  return clone.outerHTML;
+}
+
+const REPLAY_BOOT = [
+  '(function(){',
+  '  try {',
+  '    var d = JSON.parse(document.getElementById("replay-data").textContent);',
+  '    var ex = document.getElementById("rb-exit");',
+  '    if (ex) ex.style.display = "none";',   // 这个文件里"退出复盘"没地方可去
+  '    window.UI.bindTopbar();',
+  '    window.UI.bindReplayBar();',
+  '    window.Net.startReplay(d);',
+  '  } catch (e) {',
+  // 分享出去的文件要是白屏，对方完全没法排查 —— 所以在页面顶部直接把原因写出来。
+  // 给个 id 是为了让测试能**唯一**认出这条报错条：引导脚本的源码本身就内联在
+  // 页面里，所以按样式（比如 z-index）去扫会扫到脚本文字，把正常文件判成出错。
+  '    var bar = document.createElement("div");',
+  '    bar.id = "replay-error";',
+  '    bar.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;background:#3a1a1a;" +',
+  '      "color:#f3a8a8;padding:12px 16px;font:13px/1.7 monospace;white-space:pre-wrap";',
+  '    bar.textContent = "这个复盘文件打不开：" + (e && e.message ? e.message : e);',
+  '    document.body.insertBefore(bar, document.body.firstChild);',
+  '  }',
+  '})();'
+].join('\n');
+
+/**
+ * 生成分享版 HTML 的**字符串**。抽出来是为了能单独验证 ——
+ * 这种东西最容易"看着对、打开是白屏"。
+ * 失败时抛错，错误信息是可以直接说给用户听的。
+ */
+Net.buildReplayHtml = async function(){
+  if (!Net.hasReplay()) throw new Error('这一局还没录到什么东西');
+  const js = await collectJs();
+  if (!js.data || !js.engine || !js.ui){
+    // file:// 直接打开时浏览器不允许读本地文件 —— 这是浏览器的限制，不是 bug。
+    // 正常情况下第 3 步的源码包会兜住；走到这里说明那份包本身缺失或过期。
+    throw new Error('读不到游戏源码。' +
+      '双击打开（file://）时，浏览器不允许网页读自己的文件，只能靠 js/sources.js 这份打包好的源码。' +
+      '请先运行 tools\\build-sources.ps1（或 build-mobile.ps1，它也会顺带更新），' +
+      '或者改用服务器地址打开、或用手机单文件版。');
+  }
+  const css = await collectCss();
+  const shell = cleanShell();
+  // 复盘数据里的 < 全部转义，免得日志文本里凑出脚本结束标签把页面截断
+  const data = JSON.stringify(Net.rec).replace(/</g, '\\u003c');
+  const names = Object.keys(js).sort();
+  return '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">\n' +
+    '<title>东秦杀 · 复盘</title>\n<style>\n' + css + '\n</style>\n</head>\n<body>\n' +
+    shell + '\n' +
+    '<script type="application/json" id="replay-data">' + data + '<\/script>\n' +
+    names.map(n => '<script>/* ===== ' + n + '.js ===== */\n' + safeInline(js[n]) + '\n<\/script>').join('\n') +
+    '\n<script>\n' + REPLAY_BOOT + '\n<\/script>\n</body>\n</html>';
+};
+
+Net.exportReplayHtml = async function(){
+  let html;
+  try {
+    html = await Net.buildReplayHtml();
+  } catch (e){
+    window.UI.toast('导出失败：' + ((e && e.message) || e), 'warn');
+    return;
+  }
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  a.href = url;
+  a.download = '东秦杀复盘-' + stamp + '.html';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 6000);
+  window.UI.toast('已导出分享版（' + Math.round(html.length / 1024) + ' KB，对方点开就能放）', 'good');
+};
+
 /* ---- 回放 ---- */
 
 const R = {
@@ -1635,6 +1868,24 @@ Net.stopReplay = function(){
   window.UI.showReplayBar(false);
   window.UI.show('start');
 };
+
+/* ---------------- 电脑强度 ---------------- */
+
+const AI_HINT = {
+  easy:   '简单：电脑只看牌面价值，不做身份推断，还经常漏时机 —— 适合第一次玩的人。',
+  normal: '普通：电脑会做基本的身份推断，攻守均衡。',
+  hard:   '困难：电脑精算身份、优先集火、几乎不失误。'
+};
+
+/** 切换电脑强度。单机界面和联机大厅共用这一个入口。 */
+Net.setAiLevel = function(k){
+  if (window.AI && AI.setLevel) AI.setLevel(k);
+  Net.config.aiLevel = k;
+  const h = document.getElementById('ai-hint');
+  if (h) h.textContent = AI_HINT[k] || '';
+  return k;
+};
+Net.aiHint = function(k){ return AI_HINT[k] || ''; };
 
 /* ---- 弃牌堆查看 ---- */
 
@@ -1828,6 +2079,7 @@ function clientOnMessage(m){
 function clientLobby(d){
   if (typeof d.count === 'number') Net.config.count = d.count;
   if (typeof d.protect === 'boolean') Net.config.protect = d.protect;
+  if (d.aiLevel) Net.config.aiLevel = d.aiLevel;      // 只用来显示，电脑在房主那边跑
   Net.roster = (d.roster || []).map(r => Object.assign({}, r, { peer: null }));
   const mine = Net.roster.find(r => r.self);
   if (mine) Net.mySeat = mine.seat;
@@ -1994,7 +2246,7 @@ function clientOver(d){
   }
   window.UI.cancelAsk();
   Net.started = false;
-  window.UI.showOver(d.winner, d.reason, win);
+  window.UI.showOver(d.winner, d.reason, win, d.scoreboard || null);
 }
 
 /* ---- 离开 ---- */

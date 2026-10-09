@@ -15,7 +15,12 @@
 <body>
 <pre id="RESULTS">RUNNING</pre>
 
-<!-- ui.js / fx.js 需要的元素 -->
+<!-- ui.js / fx.js 需要的元素。
+     #app / #screen-game / #screen-over 这层嵌套必须和真实 index.html 一致：
+     Net.cleanShell() 是**从 #app 取整块骨架**来导出分享版的，这里少一层
+     就会导出个空壳 —— 而且真去开那个文件之前，光看导出"成功"是发现不了的。 -->
+<div id="app">
+<div id="screen-game" class="screen active">
 <header id="topbar">
   <span id="my-id-banner"></span>
   <b id="deck-count"></b>
@@ -36,16 +41,20 @@
 </div>
 <div id="target-bar" class="hide"></div>
 <div id="spectator-bar" class="hide"></div>
+<div id="tutorial-bar" class="hide"><span class="tut-text"></span>
+  <button id="tut-next"></button><button id="tut-exit"></button></div>
 <div id="my-hand"></div>
 <div id="hand-hint"></div>
 <div id="actions"></div>
 <div id="log"></div>
 <div id="sidebar"></div>
 <div id="sidebar-head"><button id="btn-clear-log"></button></div>
+</div>
+<div id="screen-over" class="screen"><h2 id="over-title"></h2><div id="over-body"></div></div>
 <div id="fx-layer"></div>
 <div id="modal-layer"></div>
 <div id="toast-layer"></div>
-<div id="screen-over"><h2 id="over-title"></h2><div id="over-body"></div></div>
+</div>
 
 <script src="../js/data.js"></script>
 <script src="../js/fx.js"></script>
@@ -54,6 +63,7 @@
 <script src="../js/ui.js"></script>
 <script src="../js/selftest.js"></script>
 <script src="../js/net.js"></script>
+<script src="../js/tutorial.js"></script>
 <script src="js_test.js"></script>
 </body>
 </html>

@@ -448,6 +448,34 @@ input.room-code{font-family:ui-monospace,Consolas,"Courier New",monospace;
 #over-body{font-size:14px;line-height:2;color:var(--text);}
 #over-body .ov-line{margin-bottom:5px;}
 #over-body .ov-win{color:var(--green);font-weight:700;}
+#over-body .ov-sec{margin:20px 0 9px;color:var(--dim);font-size:13px;letter-spacing:3px;}
+
+/* ---- 赛后评分 / MVP ---- */
+.ov-mvp{display:inline-flex;align-items:center;gap:14px;margin:18px auto 4px;
+  padding:12px 24px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(232,196,106,.16),rgba(40,32,14,.5));
+  border:2px solid var(--gold);box-shadow:0 0 30px rgba(232,196,106,.25);}
+.ov-mvp.me{box-shadow:0 0 44px rgba(232,196,106,.5);}
+.ov-mvp .mvp-badge{font-size:13px;font-weight:900;letter-spacing:3px;color:#2a2008;
+  background:linear-gradient(180deg,#f0d089,#d8ac48);padding:3px 12px;border-radius:20px;}
+.ov-mvp .mvp-who{font-size:19px;font-weight:800;letter-spacing:1px;color:#fff;}
+.ov-mvp .mvp-score{font-size:15px;color:var(--gold);font-weight:700;
+  font-variant-numeric:tabular-nums;}
+.ov-mvp .mvp-you{font-size:13px;color:var(--green);font-weight:700;}
+
+.score-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px;}
+.score-table th,.score-table td{border:1px solid var(--line);padding:6px 8px;text-align:center;}
+.score-table th{background:rgba(120,150,190,.1);color:var(--dim);font-weight:600;font-size:12px;}
+.score-table td:nth-child(2),.score-table th:nth-child(2){text-align:left;}
+.score-table tr.me{background:rgba(90,168,224,.09);}
+.score-table tr.won td{color:#cfe8d8;}
+.score-table tr.mvp{background:rgba(232,196,106,.14);}
+.score-table tr.mvp td{color:var(--gold);font-weight:700;}
+.score-table td.sc{font-size:15px;font-variant-numeric:tabular-nums;}
+.score-table td .w{color:var(--green);font-weight:700;}
+.score-table td.dean{color:var(--gold);} .score-table td.staff{color:var(--blue);}
+.score-table td.mole{color:var(--purple);}
+.score-note{margin-top:9px;font-size:11.5px;color:var(--dim);line-height:1.9;}
 
 /* ---------------- Toast ---------------- */
 #toast-layer{position:fixed;left:50%;top:70px;transform:translateX(-50%);z-index:200;pointer-events:none;}
@@ -503,6 +531,38 @@ input.room-code{font-family:ui-monospace,Consolas,"Courier New",monospace;
 .fx-ci-row .v{flex:1;color:#dde6f2;}
 .fx-ci-row .v.hl{color:#ffd98a;font-weight:700;}
 .fx-ci-row.lim .v{color:#93a3b8;font-size:12px;line-height:1.6;}
+/* ---------------- 新手教学提示卡 ----------------
+   它原来是屏幕最顶上一条通栏细边 —— 太容易被当成装饰无视掉。
+   现在是一张浮在手牌上方的大卡片：圆角、亮边、外发光、入场动画，外加一个「教学」角标。
+   （字号/行高必须在 .tut-text 上重新写一遍：文件下方还有一条给引导弹窗用的
+     .tut-text{font-size:13.5px;line-height:2}，那条会直接命中这里的 .tut-text。） */
+#tutorial-bar{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  /* 收窄居中：通栏的话文字和按钮之间会空出一大片，看着还是"一条"而不是"一张卡"。
+     宽度和手牌区对齐（手牌也是居中排的）。 */
+  max-width:860px;margin:0 auto 10px;padding:14px 18px;border-radius:14px;
+  background:linear-gradient(180deg,#25455f,#16293b);
+  border:1px solid rgba(126,198,255,.8);
+  box-shadow:0 0 0 1px rgba(126,198,255,.14), 0 10px 30px rgba(0,0,0,.55),
+             0 0 28px rgba(90,168,224,.3);
+  font-size:14.5px;line-height:1.75;color:#dce8f6;
+  animation:tutIn .3s cubic-bezier(.2,.9,.3,1.25);
+}
+#tutorial-bar.hide{display:none;}
+@keyframes tutIn{from{opacity:0;transform:translateY(12px) scale(.97);}to{opacity:1;transform:none;}}
+#tutorial-bar .tut-badge{
+  flex:none;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:800;letter-spacing:2px;
+  color:#0d1a26;background:linear-gradient(180deg,#93d3ff,#4fa3dd);
+  box-shadow:0 0 14px rgba(120,190,255,.55);
+}
+#tutorial-bar .tut-icon{flex:none;font-size:20px;}
+#tutorial-bar .tut-text{flex:1;min-width:0;font-size:14.5px;line-height:1.75;color:#dce8f6;}
+#tutorial-bar .tut-text b{color:var(--gold);font-weight:800;}
+#tutorial-bar .tut-actions{flex:none;display:flex;gap:8px;margin-left:auto;}
+#tutorial-bar button{flex:none;}
+button.tut{background:linear-gradient(180deg,#4a7f9e,#2c546f);border-color:#6aa8c8;}
+button.tut:hover{background:linear-gradient(180deg,#5a91b0,#356078);}
+
 /* ---------------- 房主掉线条 ---------------- */
 #host-gone-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
   padding:8px 14px;background:linear-gradient(180deg,#3a2418,#2a1a12);
@@ -937,6 +997,15 @@ button{ touch-action:manipulation; }
   #phase-label{ font-size:10.5px; padding:3px 9px; }
   button.mini{ padding:6px 9px; font-size:11.5px; border-radius:8px; }
 
+  /* 教学卡片：窄屏上让正文独占一行。
+     不这么做的话角标 + 图标 + 两个按钮会全挤在第一行，正文只剩一百多像素宽，
+     被折成四五行短句 —— 反而更难读。第一行放角标和按钮，正文整行铺开。 */
+  #tutorial-bar{ padding:12px 14px; gap:8px 10px; font-size:13.5px; border-radius:12px; }
+  #tutorial-bar .tut-text{ flex:1 1 100%; order:2; font-size:13.5px; line-height:1.7; }
+  #tutorial-bar .tut-actions{ order:1; margin-left:auto; }
+  #tutorial-bar .tut-icon{ font-size:17px; }
+  #tutorial-bar .tut-badge{ font-size:11px; padding:2px 9px; letter-spacing:1px; }
+
   /* 棋盘改为纵向：座位条 → 出牌区 */
   #board{ flex-direction:column; }
   #board-main{ flex:1; min-height:0; }
@@ -1163,6 +1232,16 @@ button{ touch-action:manipulation; }
       </div>
 
       <div class="form-row">
+        <label>电脑强度</label>
+        <div class="btn-group" id="pick-ai">
+          <button data-ai="easy">简单</button>
+          <button data-ai="normal" class="on">普通</button>
+          <button data-ai="hard">困难</button>
+        </div>
+      </div>
+      <p class="hint ai-hint" id="ai-hint">普通：电脑会做基本的身份推断，攻守均衡。</p>
+
+      <div class="form-row">
         <label>可选规则</label>
         <div class="btn-group" id="pick-opt">
           <button data-opt="protect" class="toggle on">保护轮（第一圈不死）</button>
@@ -1177,6 +1256,7 @@ button{ touch-action:manipulation; }
       </div>
 
       <div class="start-actions">
+        <button id="btn-tutorial" class="tut big">新手教学局</button>
         <button id="btn-start" class="primary big">单机游戏</button>
         <button id="btn-net" class="big">联机对战</button>
         <button id="btn-rules" class="big">规则速查</button>
@@ -1264,6 +1344,19 @@ button{ touch-action:manipulation; }
     </main>
 
     <footer id="bottom">
+      <!-- 新手教学提示卡。
+           放在**手牌正上方**、做成一张有边框和光晕的大卡片，而不是屏幕最顶上那条细边 ——
+           细边太容易被无视，而新手这会儿眼睛正好在手牌这一带。
+           #bottom 是 flex:none，所以卡片撑开时被压的是上面的棋盘，手牌不会被挤走。 -->
+      <div id="tutorial-bar" class="hide">
+        <span class="tut-badge">教学</span>
+        <span class="tut-icon">💡</span>
+        <span class="tut-text"></span>
+        <span class="tut-actions">
+          <button id="tut-next" class="mini">知道了</button>
+          <button id="tut-exit" class="mini">退出教学</button>
+        </span>
+      </div>
       <!-- 选目标时的操作条（点棋盘选人，这里出「确定 / 取消 / 列表选择」） -->
       <div id="target-bar" class="hide"></div>
       <!-- 旁观席专用条 -->
@@ -1293,7 +1386,8 @@ button{ touch-action:manipulation; }
       <div id="over-body"></div>
       <div class="start-actions">
         <button id="btn-again" class="primary big">再来一局</button>
-        <button id="btn-save-replay" class="big">保存这局复盘</button>
+        <button id="btn-save-replay" class="big">保存复盘</button>
+        <button id="btn-share-replay" class="big">导出分享版</button>
       </div>
     </div>
   </div>
@@ -1643,7 +1737,7 @@ const CARD_DETAIL = {
   '突击查寝': { target:'所有其他角色', dist:'—', effect:'每名目标须打出 1 张"代课"，否则受到 1 点伤害。',
     limit:'雨衣可免疫；逐个结算。', order:'同上，响应牌改为代课。' },
   '辅导员签字': { target:'一张正在生效的牌', dist:'—', effect:'抵消该牌的效果。',
-    limit:'**时机**：普通事件牌在使用时问；群体牌（随堂测验 / 突击查寝）对**每个目标分别**问一次，抵消某一个目标不影响其他人；延时牌（手机没电 / 饭卡没钱 / 论文查重）要等到回合开始查考勤、真正生效时才问，放置时不问。不能抵消已结算完毕的牌；可被另一张辅导员签字再抵消（对抗链最多 3 层）；基本牌与装备牌本身不能抵消。',
+    limit:'**时机**：普通事件牌在使用时问；群体牌（随堂测验 / 突击查寝）对**每个目标分别**问一次，抵消某一个目标不影响其他人；延时牌（手机没电 / 饭卡没钱 / 论文查重）要等到回合开始查考勤、**翻开抽签牌之前**问，放置时不问（跟闪电一样：翻开了就只剩改判窗口）。不能抵消已结算完毕的牌；可被另一张辅导员签字再抵消（对抗链最多 3 层）；基本牌与装备牌本身不能抵消。',
     order:'①在目标牌生效的窗口声明 →②指定被抵消牌 →③若被再抵消则原牌继续结算 →④入弃牌堆。' },
   '点名接力': { target:'一名装备了武器的其他角色', dist:'—', effect:'令其对指定角色使用"上课点名"；若不执行，你获得其武器。',
     limit:'目标无武器时不能指定；手中没有"上课点名"时视为无法执行。', order:'①指定目标与第三者 →②响应窗口 →③执行或拒绝 →④拒绝则武器转移。' },
@@ -1659,7 +1753,8 @@ const CARD_DETAIL = {
   '饭卡没钱': { target:'距离 1 以内的一名其他角色', dist:'≤1', effect:'置于其通知栏；查考勤抽签牌若不为 ♣ 则跳过摸牌阶段（机制等同兵粮寸断）。',
     limit:'距离 >1 不能指定。', order:'同【手机没电】。' },
   '论文查重': { target:'自己', dist:'—', effect:'置于自己通知栏；查考勤抽签牌为 ♠2–♠9 时受到 3 点雷电伤害，否则移动到下家通知栏。',
-    limit:'命中概率 25/160 = 15.6%；移动不算"使用"，不触发成为目标类技能。', order:'①置于自己通知栏 →②查考勤判定 →③命中受伤 或 移交下家。' },
+    limit:'命中概率 25/160 = 15.6%；移动不算"使用"，不触发成为目标类技能；被辅导员签字抵消时**不做判定、直接移交下家**（跟闪电一样：它不是"消失"，是"转移"）。',
+    order:'①置于自己通知栏 →②查考勤先问辅导员签字 →③没人抵消才翻抽签牌 →④命中受伤，本牌入弃牌堆；否则移交下一位存活角色 →⑤被抵消则不翻牌、不判定，直接移交下一位存活角色。' },
   '点名册': { target:'装备到武器栏', dist:'攻击范围 1', effect:'出牌阶段你可以使用任意张点名类牌。',
     limit:'解除的是整个点名类（上课点名 / 公开处刑 / 雷同警告）的每回合 1 张上限。', order:'装备后持续生效。' },
   '激光笔': { target:'装备到武器栏', dist:'攻击范围 2', effect:'点名类牌指定异性角色为目标后，可令其弃 1 张手牌或让你摸 1 张。',
@@ -2266,11 +2361,32 @@ function cardValue(c, me){
   return v;
 }
 
+/* ---------------- 电脑强度 ----------------
+ * 三档**只调参数，不换决策逻辑**：
+ *   noise     评分里的随机项幅度。越大越常做出"次优选择"。
+ *   inference 身份推断的权重。0.35 = 只看出个大概，1.7 = 精算。
+ *   mistake   出牌阶段"低级错误"的概率：跳过最优解，甚至直接过。
+ *   blunder   响应窗口"漏时机"的概率：该打代课/辅导员签字时没打。
+ *
+ * 注意"不打自己人"**不随难度变化**（见下面的 threat 包装）——
+ * 那是基本能力，不是难度；简单档要是会打队友就成了"坏掉"而不是"简单"。
+ */
+const LEVELS = {
+  easy:   { key:'easy',   name:'简单', noise:46, inference:0.35, mistake:0.30, blunder:0.22 },
+  normal: { key:'normal', name:'普通', noise:10, inference:1.00, mistake:0.07, blunder:0.05 },
+  hard:   { key:'hard',   name:'困难', noise:3,  inference:1.70, mistake:0.00, blunder:0.00 }
+};
+let aiLevel = 'normal';
+function lv(){ return LEVELS[aiLevel] || LEVELS.normal; }
+function setLevel(k){ aiLevel = LEVELS[k] ? k : 'normal'; return aiLevel; }
+/** 评分用的随机项（幅度由难度决定） */
+function J(){ return Math.random() * lv().noise; }
+
 /* ---------------- 简易身份推断 ---------------- */
 function aliveCount(id){ return G.players.filter(p => p.alive && p.identity === id).length; }
 
 /** 仇恨度：越高越想打他（-100 = 绝对不打） */
-function threat(ai, t){
+function threatRaw(ai, t){
   if (t === ai || !t.alive) return -100;
   const me = ai.identity, him = t.identity;
   const known = t.revealed || him === 'dean';   // 死亡揭示 / 院长公开
@@ -2316,13 +2432,24 @@ function threat(ai, t){
   if (known && him === 'staff') return (sta > stu) ? 70 : -60;
   return 30;
 }
+/**
+ * 对外用的威胁度：按难度缩放"身份推断"的强度。
+ * 已知队友（raw <= -60，比如院方对公开的院长、对已揭示的同阵营）**不缩放** ——
+ * "不打自己人"是基本能力，不该随难度变化。
+ */
+function threat(ai, t){
+  const raw = threatRaw(ai, t);
+  const w = lv().inference;
+  if (w === 1 || raw <= -60) return raw;
+  return Math.round(raw * w);
+}
 function isFriend(ai, t){ return threat(ai, t) < -20; }
 
 /* ---------------- 选择目标 ---------------- */
 function pickBestTarget(ai, cands){
   let best = null, bestScore = -999;
   for (const t of cands){
-    const s = threat(ai, t) + Math.random() * 18 - (t.hp <= 1 ? 6 : 0);
+    const s = threat(ai, t) + J() * 1.8 - (t.hp <= 1 ? 6 : 0);
     if (s > bestScore){ bestScore = s; best = t; }
   }
   return best;
@@ -2467,7 +2594,7 @@ function decidePlay(me, req){
       chosen = [best];
     }
     const lenBonus = card.type === 'delayed' ? -8 : 0;
-    acts.push({ action:{ type:'card', card, targets: chosen }, score: scoreCard(me, card, chosen) + lenBonus + Math.random()*10 });
+    acts.push({ action:{ type:'card', card, targets: chosen }, score: scoreCard(me, card, chosen) + lenBonus + J() });
   }
   // 武器转化技：电风扇 / 粉笔
   for (const s of req.skills){
@@ -2487,7 +2614,7 @@ function decidePlay(me, req){
     if (!tg.length) continue;
     const best = pickBestTarget(me, tg);
     acts.push({ action:{ type:'virtual', cost, asName, dmg, suit, rank, targets:[best] },
-      score: 72 + threat(me, best) * 0.3 + Math.random() * 8 });
+      score: 72 + threat(me, best) * 0.3 + J() * 0.8 });
   }
   // 普通技能
   for (const s of req.skills){
@@ -2508,10 +2635,20 @@ function decidePlay(me, req){
       chosen = chosen.filter(Boolean);
       if (!chosen.length) continue;
     }
-    acts.push({ action:{ type:'skill', skill:s, targets: chosen }, score: scoreSkill(me, s, chosen) + Math.random()*8 });
+    acts.push({ action:{ type:'skill', skill:s, targets: chosen }, score: scoreSkill(me, s, chosen) + J() * 0.8 });
   }
   if (!acts.length) return { action:{ type:'end' } };
   acts.sort((a,b) => b.score - a.score);
+
+  // 难度：简单档偶尔"低级失误" —— 一半概率干脆结束阶段，一半概率
+  // 从前几个候选里随便挑一个（而不是分最高的那个）。
+  // 这是新手最典型的两类失误，比"随机乱打"更像真人。
+  const L = lv();
+  if (L.mistake > 0 && Math.random() < L.mistake){
+    if (Math.random() < 0.5) return { action:{ type:'end' } };
+    return acts[Math.floor(Math.random() * Math.min(acts.length, 4))];
+  }
+
   const top = acts[0];
   if (top.score < 34) return { action:{ type:'end' } };
   return top;
@@ -2548,6 +2685,12 @@ function decideChoice(me, req){
     }
     return { option:'no' };
   }
+
+  // 难度：简单档会"漏时机" —— 该打代课/辅导员签字/发动触发技的时候没打出来。
+  // 放在濒死处理**之后**：跳过自救等于直接送死，那不像"简单"而像"坏掉"。
+  const L = lv();
+  if (L.blunder > 0 && opts.includes('no') && Math.random() < L.blunder) return { option:'no' };
+
   // 代课
   if (opts.includes('card') && label.includes('打出代课')) return { option:'card' };
   if (opts.includes('skill_popi')) return { option:'skill_popi' };
@@ -2659,6 +2802,8 @@ function pickShown(me, cards){
 function pickTarget(me, cands){ return pickBestTarget(me, cands); }
 
 window.AI = { decide, pickShown, pickTarget, threat, cardValue, isFriend,
+  // 电脑强度（'easy' | 'normal' | 'hard'）
+  setLevel, getLevel: () => aiLevel, LEVELS,
   // 测试钩子：AI 是靠正则从**中文提示语**里抠玩家名字的，
   // 改了 engine.js 的文案就可能静默失效。暴露出来让自测能钉住这个耦合。
   _parseTargetName: parseTargetName, _parseDyingTarget: parseDyingTarget };
@@ -2707,6 +2852,18 @@ function log(text, cls, only, redacted){
   if (window.UI && UI.pushLog) UI.pushLog(text, cls);
 }
 function logBig(t){ log(t, 'big'); }
+
+/* ---------------- 赛后评分用的埋点 ----------------
+ * 只记"做的事"，不记身份 —— 评分和 MVP 要奖励打得好的人，
+ * 而不是"抽到好身份的人"。 */
+function noteStat(seat, key, n){
+  if (!G.stats) G.stats = {};
+  const s = G.stats[seat] || (G.stats[seat] = { dmg:0, kills:0, saves:0, heals:0, skills:0 });
+  s[key] = (s[key] || 0) + (n === undefined ? 1 : n);
+}
+function statOf(seat){
+  return (G.stats && G.stats[seat]) || { dmg:0, kills:0, saves:0, heals:0, skills:0 };
+}
 function toast(t, cls){ if (window.UI && UI.toast) UI.toast(t, cls); }
 function rand(n){ return Math.floor(Math.random()*n); }
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -2728,7 +2885,13 @@ function curTurnPlayer(){ return G.players[G.turnSeat]; }
 /* ---------------- 技能判定 ---------------- */
 function hasSkill(p, name){ return p.char && p.char.skills.some(s => s.name === name); }
 function skillUsed(p, name){ return p.skillsUsedThisTurn && p.skillsUsedThisTurn[name]; }
-function markSkillUsed(p, name){ p.skillsUsedThisTurn[name] = true; }
+function markSkillUsed(p, name){
+  // 同一个技能一回合内可能被标记两次（playPhase 里两份名单有重叠），
+  // 提前返回既保证幂等，也避免赛后评分把技能次数算重
+  if (p.skillsUsedThisTurn && p.skillsUsedThisTurn[name]) return;
+  p.skillsUsedThisTurn[name] = true;
+  noteStat(p.seat, 'skills', 1);
+}
 
 /* 【炫富】改成**每轮**限一次（原来是每回合一次）。
    弃 1 张牌就能取消任意一张针对你的牌，在多人局里一回合一次太强了。
@@ -2928,6 +3091,7 @@ async function damage(target, amount, source, type, opts){
   if (source && source !== target){
     if (source.alive) source.damageDealtThisTurn = (source.damageDealtThisTurn||0) + dmg;
     G.harmLog.push({ s: source.seat, t: target.seat, a: dmg, type: type });
+    noteStat(source.seat, 'dmg', dmg);          // 赛后评分：实际打出的伤害
   }
 
   // 濒死
@@ -2953,10 +3117,12 @@ async function chainConduct(target, amount, source, type){
   }
 }
 
-async function heal(target, amount, reason){
+async function heal(target, amount, reason, by){
   if (!target.alive) return;
   const before = target.hp;
   target.hp = Math.min(target.maxHp, target.hp + amount);
+  // 赛后评分：治疗**他人**才算（自己喝请假条不算贡献）
+  if (by && by !== target && target.hp > before) noteStat(by.seat, 'heals', target.hp - before);
   if (target.hp > before){
     log(target.name + ' 回复 ' + (target.hp - before) + ' 点体力（' + target.hp + '/' + target.maxHp + '）', 'heal');
     if (window.FX){ FX.floatText(target.seat, '+' + (target.hp - before), 'heal'); FX.sfx('heal'); }
@@ -3024,7 +3190,7 @@ async function rescueLoop(dying, helper, isSelf){
         if (sel.cards && sel.cards.length){
           discardFromHand(helper, sel.cards);
           noteRescue(helper, dying);
-          await heal(dying, 1, '鼓励');
+          await heal(dying, 1, '鼓励', helper);
         }
         continue;
       }
@@ -3034,7 +3200,7 @@ async function rescueLoop(dying, helper, isSelf){
       removeFromHand(helper, sel.cards); toDiscard(sel.cards);
       log(helper.name + ' 使用 ' + cardText(sel.cards[0]) + ' 救援 ' + dying.name, 'heal');
       noteRescue(helper, dying);
-      await heal(dying, 1, 'rescue');
+      await heal(dying, 1, 'rescue', helper);
       continue;
     }
     // 本人自救
@@ -3060,11 +3226,15 @@ async function rescueLoop(dying, helper, isSelf){
   }
 }
 
-/** 记一笔"谁救了院长"。院方阵营的 AI 靠它判断某人更像教务，从而少打他。 */
+/**
+ * 记一笔救援。
+ *   · 院长的救援另记进 G.rescueLog —— 院方 AI 靠它判断"某人更像教务"，从而少打他
+ *   · 所有救援都记进评分统计（救谁是贡献，跟身份无关）
+ */
 function noteRescue(helper, dying){
-  if (!helper || !dying) return;
-  if (dying.identity !== 'dean') return;      // 只记救院长（规则书里院长是院方唯一公开身份）
-  if (helper === dying) return;               // 自救不算
+  if (!helper || !dying || helper === dying) return;   // 自救不算
+  noteStat(helper.seat, 'saves', 1);
+  if (dying.identity !== 'dean') return;
   if (!G.rescueLog) G.rescueLog = {};
   G.rescueLog[helper.seat] = (G.rescueLog[helper.seat] || 0) + 1;
 }
@@ -3073,6 +3243,12 @@ function noteRescue(helper, dying){
 async function killPlayer(p, source){
   p.alive = false;
   p.revealed = true;
+  // 赛后评分：击杀只算"别人的人头"（自爆/无来源不算）
+  if (source && source !== p && source.alive !== false){
+    noteStat(source.seat, 'kills', 1);
+    if (!G.killLog) G.killLog = [];
+    G.killLog.push({ killer: source.seat, victim: p.seat });
+  }
   logBig('☠ ' + p.name + ' 死亡，身份揭示：' + IDENTITIES[p.identity].name);
   if (window.FX) await FX.death(p);
   // 牌全部进弃牌堆
@@ -3120,6 +3296,54 @@ function checkVictory(){
   const bad = students.concat(moles).filter(p => p.alive);
   if (bad.length === 0){ endGame('dean', '学生与卧底全部出局，院长存活'); return; }
 }
+/* ---------------- 赛后评分 ----------------
+ * 只奖励"做的事"，不奖励"抽到什么身份" —— 身份输赢已经由阵营分体现了，
+ * 这里比的是"这一局谁打得漂亮"。所以一个打得很凶但输掉的学生，
+ * 完全可以拿到比躺赢的教务更高的分。 */
+const SCORE_RULE = [
+  { key:'dmg',    label:'造成伤害', per:3,  unit:'点' },
+  { key:'kills',  label:'击杀',     per:15, unit:'个' },
+  { key:'saves',  label:'救援濒死', per:12, unit:'次' },
+  { key:'heals',  label:'治疗他人', per:4,  unit:'点' },
+  { key:'skills', label:'发动技能', per:2,  unit:'次', cap:20 }
+];
+const SCORE_WIN = 30, SCORE_DRAW = 10, SCORE_ALIVE = 8;
+
+function buildScoreboard(winner){
+  const rows = G.players.map(p => {
+    const st = statOf(p.seat);
+    const win = !!(winner &&
+      ((winner === 'dean' && (p.identity === 'dean' || p.identity === 'staff')) ||
+       (winner === 'student' && p.identity === 'student') ||
+       (winner === 'mole' && p.identity === 'mole')));
+    const parts = [];
+    let score = 0;
+    if (win){ score += SCORE_WIN; parts.push({ label:'阵营胜利', v:SCORE_WIN }); }
+    else if (!winner){ score += SCORE_DRAW; parts.push({ label:'平局', v:SCORE_DRAW }); }
+    SCORE_RULE.forEach(r => {
+      let v = (st[r.key] || 0) * r.per;
+      if (r.cap) v = Math.min(v, r.cap);
+      if (v > 0){ score += v; parts.push({ label:r.label, v:v }); }
+    });
+    if (p.alive){ score += SCORE_ALIVE; parts.push({ label:'存活到终局', v:SCORE_ALIVE }); }
+    return { seat:p.seat, name:p.name, charTitle:(p.char ? p.char.title : ''),
+             identity:p.identity, alive:!!p.alive, win:win,
+             stats:st, score:score, parts:parts };
+  });
+  // MVP：总分最高；并列时比击杀 → 再比伤害 → 再比座位号（小的优先）
+  let mvp = null;
+  for (const r of rows){
+    if (!mvp){ mvp = r; continue; }
+    if (r.score > mvp.score) mvp = r;
+    else if (r.score === mvp.score){
+      if (r.stats.kills !== mvp.stats.kills) { if (r.stats.kills > mvp.stats.kills) mvp = r; }
+      else if (r.stats.dmg > mvp.stats.dmg) mvp = r;
+    }
+  }
+  if (mvp && mvp.score <= 0) mvp = null;      // 一分没得就别评了
+  return { winner: winner, rows: rows, mvpSeat: mvp ? mvp.seat : -1 };
+}
+
 function endGame(winner, reason){
   if (G.over) return;
   G.over = true;
@@ -3131,9 +3355,10 @@ function endGame(winner, reason){
     else if (winner === 'student') humanWin = (human.identity === 'student');
     else if (winner === 'mole') humanWin = (human.identity === 'mole');
   }
+  G.scoreboard = buildScoreboard(winner);
   logBig('游戏结束：' + (winner ? IDENTITIES[winner].name + '阵营胜利' : '平局') + '（' + reason + '）');
   if (window.FX) FX.gameEnd(humanWin);
-  if (window.UI && UI.showOver) UI.showOver(winner, reason, humanWin);
+  if (window.UI && UI.showOver) UI.showOver(winner, reason, humanWin, G.scoreboard);
 }
 
 /* =========================================================
@@ -3420,8 +3645,8 @@ async function useCardInner(user, card, targets){
 
   // 辅导员签字：**只在牌真正起作用的那一刻**才能被抵消。
   //   · 普通事件牌 → 就是现在（作用时）
-  //   · 延时牌（手机没电/饭卡没钱/论文查重）→ 等到回合开始查考勤、真正生效时才问，
-  //     放置的时候不开放（见 judgePhase）
+  //   · 延时牌（手机没电/饭卡没钱/论文查重）→ 等到回合开始查考勤、**翻开抽签牌之前**问，
+  //     放置的时候不开放（见 judgePhase）。跟闪电一样：翻开了就只剩改判窗口，不能再补。
   //   · 群体牌（随堂测验/突击查寝）→ 在 resolveAoe 里对**每个目标**单独问
   const isAoe = (card.kind === 'aoeAttack');
   if (card.type === 'event' && card.kind !== 'nullify' && !isAoe){
@@ -3454,7 +3679,7 @@ async function useCardInner(user, card, targets){
     case 'aoeAttack':    await resolveAoe(user, card); break;
     case 'relay':        await resolveRelay(user, live[0]); break;
     case 'harvest':      await resolveHarvest(user); break;
-    case 'massHeal':     for (const p of alivePlayers()) await heal(p, 1, '放假通知'); break;
+    case 'massHeal':     for (const p of alivePlayers()) await heal(p, 1, '放假通知', user); break;
     case 'fireTalk':     await resolveFireTalk(user, live[0]); break;
     case 'chain':        await resolveChain(user, live); break;
     case 'delayPlay':    placeDelayed(live[0], card); finishUse(user, card); return;
@@ -3977,7 +4202,7 @@ const SKILLS = {
     // 是奶扣【治愈】（要弃一张牌才能回复 1 点）的严格上位替代。
     const t = targets[0];
     if (!t || t === p) return;
-    await heal(t, 1, '共情');
+    await heal(t, 1, '共情', p);
     await drawCards(p, 1, '共情');
   },
   /* R-08 */
@@ -3987,7 +4212,7 @@ const SKILLS = {
     const sel = await Ask(p, { kind:'selectCards', prompt:'【透析】弃置两张牌', from:'any', min:2, max:2 });
     if (!sel.cards || sel.cards.length < 2) return;
     payCards(p, sel.cards);
-    await heal(t, 1, '透析');
+    await heal(t, 1, '透析', p);
     await drawCards(t, 1, '透析');
   },
   /* R-09 */
@@ -4105,7 +4330,7 @@ const SKILLS = {
     const sel = await Ask(p, { kind:'selectCards', prompt:'【治愈】弃置一张牌', from:'any', min:1, max:1 });
     if (!sel.cards || !sel.cards.length) return;
     payCards(p, sel.cards);
-    await heal(t, 1, '治愈');
+    await heal(t, 1, '治愈', p);
   },
   /* R-18 */
   async 鸽王(p, targets){
@@ -4231,6 +4456,25 @@ async function runTurn(p){
   await sleep(420);            // 回合之间留白，避免"刚看完就换人"
 }
 
+/**
+ * 【论文查重】传给下一位存活角色。
+ *
+ * 两条路都走这里：判定没命中，和判定被辅导员签字抵消 ——
+ * 两者都等于"这次没劈中"，而这张牌的身份就是热土豆，没劈中就得传下去。
+ *
+ * 规则书 6.5 说得明确：这个"移动"**不是"使用"** ——
+ * 不触发"成为目标"类技能、不进响应窗口、也不能被再一张辅导员签字抵消。
+ */
+function passZhuancha(from, card, why){
+  const alive = alivePlayers();
+  const i = alive.indexOf(from);
+  const next = alive[(i + 1) % alive.length];
+  if (next && next !== from){
+    next.judge.push(card);
+    log((why ? why + '：' : '') + '论文查重移动到 ' + next.name + ' 的通知栏', 'sys');
+  } else toDiscard([card]);
+}
+
 async function judgePhase(p){
   // 断网标记
   if (p.marks.net > 0){
@@ -4249,13 +4493,22 @@ async function judgePhase(p){
   while (p.judge.length){
     if (!p.alive) return;
     const card = p.judge[p.judge.length - 1];   // 后进先出
-    // 延时牌**真正生效的时刻就是现在** —— 辅导员签字只在这里开放，
-    // 放置的时候不问（规则书原来写的是"放置时也可被无效"，按房规收紧到生效时）
+    // 辅导员签字在**翻开抽签牌之前**问，而不是等看到结果再问 ——
+    // 这就是闪电的规矩：无懈可击必须抢在判定牌翻开之前，翻开了就只剩改判窗口。
+    // （"放置时也开放"那条规则书原来写过，按房规砍掉了，见修订 2。）
+    // 注意问的时候还不知道会不会生效：问完才 drawFromDeck()。这是对的，别调换。
     if (await nullifyCheck(p, card, { judge: true })){
       const ni = p.judge.indexOf(card);
       if (ni >= 0) p.judge.splice(ni, 1);
-      toDiscard([card]);
       log('【' + card.name + '】被辅导员签字抵消，不进行查考勤', 'sys');
+      if (card.name === '论文查重'){
+        // 签字抵消掉的是"受到 3 点雷电伤害"**这一次判定**，不是这张牌本身。
+        // 它的身份是热土豆：没劈中就该传给下家（规则书 5.3 F8'）。
+        // 这里以前和别的延时牌一样直接弃掉 —— 等于把整张牌的存在感抹了。
+        passZhuancha(p, card, '判定被抵消');
+      } else {
+        toDiscard([card]);
+      }
       if (window.UI) UI.render();
       await sleep(200);
       continue;
@@ -4282,14 +4535,8 @@ async function judgePhase(p){
         toDiscard([card, jc]);
         await damage(p, 3, null, 'thunder');
       } else {
-        const alive = alivePlayers();
-        const i = alive.indexOf(p);
-        const next = alive[(i + 1) % alive.length];
         toDiscard([jc]);
-        if (next && next !== p){
-          next.judge.push(card);
-          log('未命中：论文查重移动到 ' + next.name + ' 的通知栏', 'sys');
-        } else toDiscard([card]);
+        passZhuancha(p, card, '未命中');
       }
     } else {
       toDiscard([card, jc]);
@@ -4478,6 +4725,9 @@ function initGame(opts){
   // 谁救过院长（公开信息，AI 靠它推断"这人更像教务"）
   // 以前 AI 读的是 p._memo.rescue，但 _memo 全项目只读不写，那个判断从来没生效过。
   G.rescueLog = {};
+  // 赛后评分用：每人的 伤害 / 击杀 / 救援 / 治疗 / 技能次数
+  G.stats = {};
+  G.killLog = [];
   const n = opts.count;
   const total = D.CHARACTERS.length;
   // 哪些座位是真人在操作。单机/热座时就是 [0]。
@@ -4699,7 +4949,10 @@ async function gameLoop(){
       const idx = (G.turnSeat + i) % G.players.length;
       if (G.players[idx].alive){ next = idx; break; }
     }
-    if (next === G.turnSeat){ G.over = true; checkVictory(); break; }
+    // 只剩一个人活着了，没人可轮 —— 胜负交给 checkVictory 判。
+    // 注意别在这里先写 G.over：checkVictory 和 endGame 开头都有 `if (G.over) return`，
+    // 先写就等于把它们整个跳过，结果是**不弹结算界面**就黑在那里。
+    if (next === G.turnSeat){ checkVictory(); break; }
     const wrapped = next <= G.turnSeat;
     G.turnSeat = next;
     if (G.players.filter(x=>x.alive).length <= 1) { checkVictory(); if (G.over) break; }
@@ -4707,10 +4960,24 @@ async function gameLoop(){
       G.round++;
       G.firstRound = false;
       log('===== 第 ' + G.round + ' 轮开始 =====', 'big');
-      if (G.round > 40){ logBig('回合数过多，判定平局'); G.over = true; break; }
+      // 打太久了判平局。这里同样必须走 endGame（它自己会写 G.over 并弹结算）——
+      // 以前是先写 G.over，于是 endGame 直接在门口返回：一局磨到 40 轮之后
+      // 界面就那么停在棋盘上，既没结算也没法继续。
+      if (G.round > 40){ endGame(null, '回合数过多，判定平局'); break; }
     }
   }
-  if (!G.over){ G.over = true; checkVictory(); }
+  // 收尾。循环有两种退出方式：这局真的打完了，或者 G.gen 变了（有人开了新的一局）。
+  // 后一种情况下本局已经作废，**绝不能**再去动 G —— 那会把刚开的新局标成已结束，
+  // 表现是新局一进去就"游戏结束"、什么都点不动。
+  // 触发场景很日常：一局还没跑完（比如正好轮到电脑）就点「再来一局」或「新手教学局」。
+  //
+  // 还留在这里则说明循环没停在"已分出胜负"上（某个 break 漏设了 G.over）：
+  // 先让 checkVictory 判，判不出来就当平局收尾 —— 无论如何都得有个结算界面。
+  // 注意别自己先写 G.over：checkVictory / endGame 开头都有 `if (G.over) return`。
+  if (G.gen === myGen && !G.over){
+    checkVictory();
+    if (!G.over) endGame(null, '对局结束');
+  }
 }
 
 window.Engine = {
@@ -4722,8 +4989,10 @@ window.Engine = {
   assignRole, finalizeRoles, pendingRoleSeats, dealInitialHands,
   // 身份轮抽（模式 B）
   assignIdentity, advanceIdentityDraft, pendingIdentitySeats, identityPoolLeft,
+  // 赛后评分（供自测与扩展使用）
+  buildScoreboard, SCORE_RULE,
   // 供自检与扩展使用
-  isImmuneByCard, canUseAttack, allZoneCards, countPayable
+  isImmuneByCard, canUseAttack, allZoneCards, countPayable, judgePhase
 };
 })();
 
@@ -4780,6 +5049,7 @@ UI.clearThinking = function(){
  *           onConfirm(chosen), onCancel()}
  */
 function beginTargeting(opts){
+  if (window.Tutorial) Tutorial.notify('targeting', {});
   targeting = Object.assign({ min:1, max:1, chosen:[] }, opts);
   if (!targeting.cands || !targeting.cands.length){ targeting = null; return false; }
   // 只有一个合法目标且只要 1 个：直接选中，省一次点击
@@ -5396,6 +5666,7 @@ UI.modal = modal;
 let pendingResolve = null;
 
 UI.askHuman = function(req){
+  if (window.Tutorial) Tutorial.notify('ask', { req: req });
   return new Promise(resolve => {
     const done = r => {
       if (pendingResolve === done) pendingResolve = null;
@@ -5685,24 +5956,104 @@ UI.showJudge = function(card, jc){
   setTimeout(() => { if (layer.contains(box)) closeModal(); }, wait);
 };
 
+/* ---------------- 本机战绩（存在浏览器里，跨局累计） ---------------- */
+const RECORD_KEY = 'dqk_record';
+function readRecord(){
+  const d = { games:0, wins:0, mvps:0, best:0 };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem(RECORD_KEY) || '{}')); }
+  catch (e){ return d; }
+}
+/** 记一笔本机战绩。旁观席（humanSeat < 0）不算。 */
+function recordResult(humanWin, board){
+  if (G.humanSeat < 0) return readRecord();
+  const rec = readRecord();
+  rec.games++;
+  if (humanWin) rec.wins++;
+  if (board && board.mvpSeat === G.humanSeat) rec.mvps++;
+  const mine = board && board.rows.find(r => r.seat === G.humanSeat);
+  if (mine && mine.score > rec.best) rec.best = mine.score;
+  try { localStorage.setItem(RECORD_KEY, JSON.stringify(rec)); } catch (e){ /* 忽略 */ }
+  return rec;
+}
+
 /* ---------------- 结束界面 ---------------- */
-UI.showOver = function(winner, reason, humanWin){
+UI.showOver = function(winner, reason, humanWin, board){
+  if (window.Tutorial) Tutorial.notify('over', {});
   const title = document.getElementById('over-title');
   const body = document.getElementById('over-body');
   title.textContent = humanWin ? '你赢了' : (winner ? '你输了' : '平局');
   title.style.color = humanWin ? '#5ac47e' : '#e05a5a';
-  let html = '<div class="ov-line">' + (winner ? D.IDENTITIES[winner].name + '阵营胜利' : '平局') + '　<span style="color:#8fa0b5">（' + reason + '）</span></div>';
-  html += '<div class="ov-line" style="margin-top:14px;color:#8fa0b5">身份揭示</div>';
+
+  const mySeat = G.humanSeat;
+  // 先记战绩，再渲染（渲染里要显示累计结果）
+  const rec = (mySeat >= 0) ? recordResult(humanWin, board) : readRecord();
+
+  let html = '<div class="ov-line">' +
+    (winner ? D.IDENTITIES[winner].name + '阵营胜利' : '平局') +
+    '　<span style="color:#8fa0b5">（' + reason + '）</span></div>';
+
+  /* ---- MVP ---- */
+  if (board && board.mvpSeat >= 0){
+    const m = board.rows.find(r => r.seat === board.mvpSeat);
+    const mine = (board.mvpSeat === mySeat);
+    html += '<div class="ov-mvp' + (mine ? ' me' : '') + '">' +
+      '<span class="mvp-badge">MVP</span>' +
+      '<span class="mvp-who">' + (m.seat + 1) + ' 号位　' + m.name + '</span>' +
+      '<span class="mvp-score">' + m.score + ' 分</span>' +
+      (mine ? '<span class="mvp-you">就是你 🎉</span>' : '') +
+      '</div>';
+  }
+
+  /* ---- 评分表 ---- */
+  if (board && board.rows){
+    html += '<div class="ov-sec">评分</div>' +
+      '<table class="score-table"><thead><tr>' +
+      '<th>座位</th><th>角色</th><th>身份</th><th>结果</th>' +
+      '<th>伤害</th><th>击杀</th><th>救援</th><th>治疗</th><th>技能</th><th>总分</th>' +
+      '</tr></thead><tbody>';
+    board.rows.forEach(r => {
+      const id = D.IDENTITIES[r.identity] || { name:'?', cls:'' };
+      const cls = [];
+      if (r.seat === board.mvpSeat) cls.push('mvp');
+      if (r.seat === mySeat) cls.push('me');
+      if (r.win) cls.push('won');
+      html += '<tr class="' + cls.join(' ') + '">' +
+        '<td>' + (r.seat + 1) + '</td>' +
+        '<td>' + r.name + '</td>' +
+        '<td class="' + id.cls + '">' + id.name + '</td>' +
+        '<td>' + (r.win ? '<span class="w">胜</span>' : (winner ? '负' : '平')) + '</td>' +
+        '<td>' + r.stats.dmg + '</td>' +
+        '<td>' + r.stats.kills + '</td>' +
+        '<td>' + r.stats.saves + '</td>' +
+        '<td>' + r.stats.heals + '</td>' +
+        '<td>' + r.stats.skills + '</td>' +
+        '<td class="sc">' + r.score + '</td></tr>';
+    });
+    html += '</tbody></table>' +
+      '<p class="score-note">胜利 +30　造成伤害 每点 +3　击杀 +15　救援濒死 +12　' +
+      '治疗他人 每点 +4　发动技能 每次 +2（上限 20）　存活到终局 +8</p>';
+  }
+
+  /* ---- 身份揭示 ---- */
+  html += '<div class="ov-sec">身份揭示</div>';
   G.players.forEach(p => {
     const id = D.IDENTITIES[p.identity];
-    const me = p.seat === G.humanSeat;
+    const me = p.seat === mySeat;
     const win = (winner === 'dean' && (p.identity === 'dean' || p.identity === 'staff')) ||
                 (winner === 'student' && p.identity === 'student') ||
                 (winner === 'mole' && p.identity === 'mole');
     html += '<div class="ov-line' + (win ? ' ov-win' : '') + '">' +
-      (p.seat+1) + ' 号位　' + p.char.name + '（' + p.char.title + '）　' +
+      (p.seat + 1) + ' 号位　' + p.char.name + '（' + p.char.title + '）　' +
       '<b>' + id.name + '</b>　' + (p.alive ? '存活' : '死亡') + (me ? '　← 你' : '') + (win ? '　✔ 胜利' : '') + '</div>';
   });
+
+  /* ---- 本机战绩 ---- */
+  if (mySeat >= 0 && rec.games > 1){
+    html += '<div class="ov-sec">本机战绩</div>' +
+      '<div class="ov-line">共 ' + rec.games + ' 局　胜 <b>' + rec.wins + '</b>　' +
+      'MVP <b>' + rec.mvps + '</b> 次　最高分 <b>' + rec.best + '</b></div>';
+  }
+
   body.innerHTML = html;
   UI.show('over');
 };
@@ -6935,7 +7286,7 @@ Net.rev = 0;
 Net.session = null;        // {base, code, peer, token, name, isHost}
 Net.roster = [];           // [{peer, name, spectator, seat, online, self}]
 Net.mySeat = -1;           // 客户端自己坐哪（旁观 = -1）
-Net.config = { count: 5, deal: 3, mode: 'A', protect: true, hostPlays: true };
+Net.config = { count: 5, deal: 3, mode: 'A', protect: true, hostPlays: true, aiLevel: 'normal' };
 Net.lastResult = null;
 
 Net.isOnline = function(){ return !!(Net.session && Net.transport && Net.transport.running); };
@@ -7170,6 +7521,13 @@ function renderRoom(status){
           }).join('') +
         '</div></div>' +
         '<p class="hint" id="net-mode-hint">' + modeHint(Net.config.mode) + '</p>' +
+        '<div class="form-row"><label>电脑强度</label><div class="btn-group" id="net-ai">' +
+          [['easy', '简单'], ['normal', '普通'], ['hard', '困难']].map(function (m) {
+            return '<button data-l="' + m[0] + '"' +
+              (Net.config.aiLevel === m[0] ? ' class="on"' : '') + '>' + m[1] + '</button>';
+          }).join('') +
+        '</div></div>' +
+        '<p class="hint">' + Net.aiHint(Net.config.aiLevel) + '</p>' +
         '<div class="btn-group">' +
           '<button id="net-plays" class="toggle ' + (Net.config.hostPlays ? 'on' : '') + '">房主也参战</button>' +
           '<button id="net-protect" class="toggle ' + (Net.config.protect ? 'on' : '') + '">保护轮</button>' +
@@ -7200,6 +7558,12 @@ function renderRoom(status){
   document.querySelectorAll('#net-mode button').forEach(b => {
     b.addEventListener('click', () => {
       Net.config.mode = b.dataset.m;
+      broadcastLobby();
+    });
+  });
+  document.querySelectorAll('#net-ai button').forEach(b => {
+    b.addEventListener('click', () => {
+      Net.setAiLevel(b.dataset.l);      // 电脑跑在房主这边，所以由房主定
       broadcastLobby();
     });
   });
@@ -7242,6 +7606,7 @@ function broadcastLobby(){
       count: Net.config.count,
       hostPlays: Net.config.hostPlays,
       protect: Net.config.protect,
+      aiLevel: Net.config.aiLevel,
       roster: Net.roster.map(x => ({
         name: x.name, seat: x.seat, host: !!x.host, online: !!x.online,
         spectator: !!x.spectator, self: x.peer === r.peer
@@ -7389,6 +7754,8 @@ function hostStartGame(){
   if (!humans.length){ window.UI.toast('至少要有一个人参战', 'warn'); return; }
   Net.started = true;
   Net.config.count = Math.max(Net.config.count, humans.length);
+  // 电脑跑在房主这边，开局前把强度落实一次
+  Net.setAiLevel(Net.config.aiLevel);
 
   const humanSeats = humans.map(r => r.seat).sort((a, b) => a - b);
   Net.rolePick = {};
@@ -7540,10 +7907,12 @@ function hostGameOver(){
   const res = Net.lastResult || { winner: null, reason: '' };
   const identities = G.players.map(p => p.identity);
   const seats = G.players.map(p => p.seat);
+  // 评分板一起发过去 —— 它是全公开的赛后统计，每个客户端都该看到同一份
+  const board = G.scoreboard || null;
   Net.roster.forEach(r => {
     sendTo(r.peer, {
       t: 'over', winner: res.winner, reason: res.reason,
-      seats: seats, identities: identities
+      seats: seats, identities: identities, scoreboard: board
     });
   });
   Net.started = false;
@@ -7891,6 +8260,221 @@ Net.saveReplay = function(){
   window.UI.toast('复盘已保存（' + Net.rec.frames.length + ' 帧）', 'good');
 };
 
+/* ---- 导出分享版 HTML ----
+ * 直接把这一局打成一个**自带整个游戏**的 .html：对方点开就能放，
+ * 不用装东西、不用联网、不用"先另存再选文件打开"。
+ *
+ * 做法：把当前页面用的脚本和样式源码抓出来，配上一副干净的 DOM 骨架，
+ * 再塞进复盘数据 + 一段只负责起回放的引导脚本。
+ */
+
+/**
+ * 从页面里找出 js/ 和 css/ 的真实目录。
+ * 不能写死 'js/' —— 页面在子目录下（比如 tools/）会取错，
+ * 部署到子路径时也会出错。从 <script src> / <link href> 反推最稳。
+ */
+function jsBase(){
+  const s = document.querySelector('script[src*="net.js"]');
+  const src = s ? (s.getAttribute('src') || '') : '';
+  const i = src.lastIndexOf('/');
+  return i >= 0 ? src.slice(0, i + 1) : 'js/';       // 'js/' 或 '../js/'
+}
+function cssBase(){
+  const l = document.querySelector('link[href$="style.css"]');
+  const href = l ? (l.getAttribute('href') || '') : '';
+  const i = href.lastIndexOf('/');
+  if (i >= 0) return href.slice(0, i + 1);
+  return jsBase().replace(/js\/$/, '') + 'css/';
+}
+
+/**
+ * 兜底源码包：js/sources.js，由 tools/build-sources.ps1 生成。
+ *
+ * 只为一件事存在 —— 页面是 file:// 打开的。那时浏览器不允许网页读自己的文件，
+ * fetch 直接失败，"导出分享版"就一个字的源码都拿不到。而 <script src> 仍然允许，
+ * 所以把源码另存成一份**能被加载的脚本**，需要时插进来。
+ *
+ * 走 http 时永远不碰它：fetch 读的是真文件，不存在过期问题。
+ * 也就是说它过期只影响"双击 index.html 再导出"这一条路 —— 由测试卡着。
+ */
+let sourcesPromise = null;
+function loadSources(){
+  if (sourcesPromise) return sourcesPromise;
+  sourcesPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = jsBase() + 'sources.js';
+    s.onload = () => {
+      if (window.DQK_SOURCES && window.DQK_SOURCES.js) resolve(window.DQK_SOURCES);
+      else reject(new Error('源码包内容不对'));
+    };
+    s.onerror = () => reject(new Error('加载不到源码包'));
+    (document.head || document.documentElement).appendChild(s);
+  });
+  return sourcesPromise;
+}
+
+/** 抓脚本源码。单文件版（手机版）是内联的，普通版走 fetch，file:// 走源码包。 */
+async function collectJs(){
+  const want = ['data', 'fx', 'ai', 'engine', 'ui', 'net'];
+  const got = {};
+  // 1) 内联脚本：build-mobile.ps1 会写成 /* ===== data.js ===== */ 这种标记
+  document.querySelectorAll('script:not([src])').forEach(s => {
+    const m = /\/\*\s*=====\s*([A-Za-z]+)\.js\s*=====\s*\*\//.exec((s.textContent || '').slice(0, 120));
+    if (m && want.indexOf(m[1]) >= 0 && !got[m[1]]) got[m[1]] = s.textContent;
+  });
+  // 2) 外链脚本：同源 fetch
+  const base = jsBase();
+  for (const n of want){
+    if (got[n]) continue;
+    try {
+      const r = await fetch(base + n + '.js', { cache: 'no-store' });
+      if (r.ok) got[n] = await r.text();
+    } catch (e){ /* file:// 下会失败，交给第 3 步 */ }
+  }
+  // 3) 还是缺 → 页面读不到自己的文件，退回源码包
+  if (want.some(n => !got[n])){
+    const pack = await loadSources().catch(() => null);
+    if (pack) want.forEach(n => { if (!got[n] && pack.js[n]) got[n] = pack.js[n]; });
+  }
+  return got;
+}
+
+async function collectCss(){
+  let css = '';
+  document.querySelectorAll('style').forEach(s => { css += s.textContent + '\n'; });
+  const base = cssBase();
+  for (const f of ['style.css', 'mobile.css']){
+    try {
+      const r = await fetch(base + f, { cache: 'no-store' });
+      if (r.ok){
+        const t = await r.text();
+        if (css.indexOf(t.slice(0, 60)) < 0) css += t + '\n';
+      }
+    } catch (e){ /* 单文件版没有这两个文件，正常 */ }
+  }
+  // index.html 里没有内联 <style>，所以 file:// 下这里会是空的 —— 同样退回源码包。
+  // 手机单文件版是靠内联的 <style> 拿到的，不会走到这一步。
+  if (!css.trim()){
+    const pack = await loadSources().catch(() => null);
+    if (pack && pack.css) css = pack.css;
+  }
+  return css;
+}
+
+/**
+ * 内联进 script 标签之前的保命处理：把源码里"裸的脚本结束标签"打断成 `<\\/script`。
+ *
+ * 浏览器解析 HTML 时只认那一个序列，**注释里出现也算**。一旦源码里出现，
+ * 这个脚本块会被提前结束，剩下的半截代码变成 HTML 文本 ——
+ * 而语法不完整的整块 JS 会**完全不执行**，表现就是"导出的文件白屏"，极难排查。
+ * 我自己就踩过一次：一句注释里带了这个标签，整个 net.js 没跑起来。
+ * （`build-mobile.ps1` 里也有同样意图的守卫，但那只管单文件版。）
+ *
+ * 换成带反斜杠的写法在三种上下文里都安全：
+ *   字符串里 → 求值仍是原序列；注释里 → 无害；正则里 → \/ 就是转义的斜杠。
+ */
+function safeInline(code){
+  return String(code).replace(/<\/(script)/gi, '<\\/$1');
+}
+
+/** 复制一份干净的游戏 DOM 骨架（清掉运行时渲染出来的内容） */
+function cleanShell(){
+  const app = document.getElementById('app');
+  if (!app) return '';
+  const clone = app.cloneNode(true);
+  // 只清"内容全是运行时渲染出来"的容器。
+  // 注意别清 #replay-bar / #tutorial-bar / #host-gone-bar —— 那几个是
+  // **固定按钮 + 一段动态文字**，整块清掉会把按钮也清没，
+  // 之后 un-hide 出来的是个高度为 0 的空条（复盘条就这样消失过一次）。
+  ['#opponents', '#my-hand', '#actions', '#log', '#play-stack', '#target-bar',
+   '#spectator-bar', '#net-box', '#role-options', '#draft-options',
+   '#identity-preview', '#over-body'].forEach(sel => {
+    const el = clone.querySelector(sel);
+    if (el) el.innerHTML = '';
+  });
+  // 骨架根节点上的内联 display 一律清掉 —— 正常情况下没有，
+  // 但任何把它藏起来的样式都会被原样克隆进导出文件，表现就是"打开一片黑"
+  clone.style.display = '';
+  clone.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const game = clone.querySelector('#screen-game');
+  if (game) game.classList.add('active');
+  return clone.outerHTML;
+}
+
+const REPLAY_BOOT = [
+  '(function(){',
+  '  try {',
+  '    var d = JSON.parse(document.getElementById("replay-data").textContent);',
+  '    var ex = document.getElementById("rb-exit");',
+  '    if (ex) ex.style.display = "none";',   // 这个文件里"退出复盘"没地方可去
+  '    window.UI.bindTopbar();',
+  '    window.UI.bindReplayBar();',
+  '    window.Net.startReplay(d);',
+  '  } catch (e) {',
+  // 分享出去的文件要是白屏，对方完全没法排查 —— 所以在页面顶部直接把原因写出来。
+  // 给个 id 是为了让测试能**唯一**认出这条报错条：引导脚本的源码本身就内联在
+  // 页面里，所以按样式（比如 z-index）去扫会扫到脚本文字，把正常文件判成出错。
+  '    var bar = document.createElement("div");',
+  '    bar.id = "replay-error";',
+  '    bar.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;background:#3a1a1a;" +',
+  '      "color:#f3a8a8;padding:12px 16px;font:13px/1.7 monospace;white-space:pre-wrap";',
+  '    bar.textContent = "这个复盘文件打不开：" + (e && e.message ? e.message : e);',
+  '    document.body.insertBefore(bar, document.body.firstChild);',
+  '  }',
+  '})();'
+].join('\n');
+
+/**
+ * 生成分享版 HTML 的**字符串**。抽出来是为了能单独验证 ——
+ * 这种东西最容易"看着对、打开是白屏"。
+ * 失败时抛错，错误信息是可以直接说给用户听的。
+ */
+Net.buildReplayHtml = async function(){
+  if (!Net.hasReplay()) throw new Error('这一局还没录到什么东西');
+  const js = await collectJs();
+  if (!js.data || !js.engine || !js.ui){
+    // file:// 直接打开时浏览器不允许读本地文件 —— 这是浏览器的限制，不是 bug。
+    // 正常情况下第 3 步的源码包会兜住；走到这里说明那份包本身缺失或过期。
+    throw new Error('读不到游戏源码。' +
+      '双击打开（file://）时，浏览器不允许网页读自己的文件，只能靠 js/sources.js 这份打包好的源码。' +
+      '请先运行 tools\\build-sources.ps1（或 build-mobile.ps1，它也会顺带更新），' +
+      '或者改用服务器地址打开、或用手机单文件版。');
+  }
+  const css = await collectCss();
+  const shell = cleanShell();
+  // 复盘数据里的 < 全部转义，免得日志文本里凑出脚本结束标签把页面截断
+  const data = JSON.stringify(Net.rec).replace(/</g, '\\u003c');
+  const names = Object.keys(js).sort();
+  return '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">\n' +
+    '<title>东秦杀 · 复盘</title>\n<style>\n' + css + '\n</style>\n</head>\n<body>\n' +
+    shell + '\n' +
+    '<script type="application/json" id="replay-data">' + data + '<\/script>\n' +
+    names.map(n => '<script>/* ===== ' + n + '.js ===== */\n' + safeInline(js[n]) + '\n<\/script>').join('\n') +
+    '\n<script>\n' + REPLAY_BOOT + '\n<\/script>\n</body>\n</html>';
+};
+
+Net.exportReplayHtml = async function(){
+  let html;
+  try {
+    html = await Net.buildReplayHtml();
+  } catch (e){
+    window.UI.toast('导出失败：' + ((e && e.message) || e), 'warn');
+    return;
+  }
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  a.href = url;
+  a.download = '东秦杀复盘-' + stamp + '.html';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 6000);
+  window.UI.toast('已导出分享版（' + Math.round(html.length / 1024) + ' KB，对方点开就能放）', 'good');
+};
+
 /* ---- 回放 ---- */
 
 const R = {
@@ -7971,6 +8555,24 @@ Net.stopReplay = function(){
   window.UI.showReplayBar(false);
   window.UI.show('start');
 };
+
+/* ---------------- 电脑强度 ---------------- */
+
+const AI_HINT = {
+  easy:   '简单：电脑只看牌面价值，不做身份推断，还经常漏时机 —— 适合第一次玩的人。',
+  normal: '普通：电脑会做基本的身份推断，攻守均衡。',
+  hard:   '困难：电脑精算身份、优先集火、几乎不失误。'
+};
+
+/** 切换电脑强度。单机界面和联机大厅共用这一个入口。 */
+Net.setAiLevel = function(k){
+  if (window.AI && AI.setLevel) AI.setLevel(k);
+  Net.config.aiLevel = k;
+  const h = document.getElementById('ai-hint');
+  if (h) h.textContent = AI_HINT[k] || '';
+  return k;
+};
+Net.aiHint = function(k){ return AI_HINT[k] || ''; };
 
 /* ---- 弃牌堆查看 ---- */
 
@@ -8164,6 +8766,7 @@ function clientOnMessage(m){
 function clientLobby(d){
   if (typeof d.count === 'number') Net.config.count = d.count;
   if (typeof d.protect === 'boolean') Net.config.protect = d.protect;
+  if (d.aiLevel) Net.config.aiLevel = d.aiLevel;      // 只用来显示，电脑在房主那边跑
   Net.roster = (d.roster || []).map(r => Object.assign({}, r, { peer: null }));
   const mine = Net.roster.find(r => r.self);
   if (mine) Net.mySeat = mine.seat;
@@ -8330,7 +8933,7 @@ function clientOver(d){
   }
   window.UI.cancelAsk();
   Net.started = false;
-  window.UI.showOver(d.winner, d.reason, win);
+  window.UI.showOver(d.winner, d.reason, win, d.scoreboard || null);
 }
 
 /* ---- 离开 ---- */
@@ -8453,6 +9056,208 @@ Net.selfTest = function(){
 })();
 
   </script>
+  <script>/* ===== tutorial.js ===== */
+/* =========================================================
+ *  东秦杀：点名席  ·  新手教学局
+ * =========================================================
+ *
+ *  规则书第 10 章有一整套教学材料，但 10.6 那份脚本是给"主持人照着念"的 ——
+ *  现实是没人会去读 180KB 的规则书。所以这里做一局**能自己教会你**的引导局：
+ *
+ *    · 4 人局（最短的完整对局）
+ *    · 身份固定：你是学生，目标是打倒院长
+ *    · 起手牌固定：点名 / 代课 / 请假条 / 借笔记，四张各教一件事
+ *    · 电脑强制**简单**档，不会精准集火把你秒了
+ *    · 每个关键节点弹一条提示，说到点子上就收
+ *
+ *  打完这一局，该会的都会了 —— 比任何文档都有效。
+ * ========================================================= */
+(function(){
+'use strict';
+
+const D = window.GameData;
+const E = window.Engine;
+const T = {};
+window.Tutorial = T;
+
+T.active = false;
+T.seen = {};
+T.prevLevel = null;
+
+/* ---------------- 提示表 ----------------
+ * 每条只在**第一次**遇到时弹一次。trigger 由 ui.js 在关键位置调用 notify()。 */
+const STEPS = [
+  { id:'open',
+    text:'你是<b>学生</b>，目标是把<b>院长</b>打倒。别人的身份都是保密的 —— 包括你旁边那位。' },
+
+  { id:'hand',
+    when: (t, p) => t === 'ask' && p.req && p.req.kind === 'playPhase',
+    text:'这是你的手牌。<b>金色边框</b>的牌现在能用，点它就使用。长按任意一张牌（电脑上右键）能看到完整说明。' },
+
+  { id:'target',
+    when: t => t === 'targeting',
+    text:'棋盘上<b>描绿边</b>的角色是合法目标 —— 点他。选完底部会出现一条「出手」操作条。' },
+
+  { id:'respond',
+    when: (t, p) => t === 'ask' && p.req && p.req.kind === 'choice'
+                     && /代课/.test((p.req.prompt || '') + (p.req.options || []).map(o => o.label).join('')),
+    text:'有人点名了你！打出<b>【代课】</b>可以躲掉。硬吃伤害要掉 1 点体力 —— 但有时候留着代课更划算。' },
+
+  // 只认弃牌阶段那一条（engine.js 里写的 '弃牌阶段：请弃置 N 张手牌'）。
+  // 别再退回 /弃置/ 这种宽匹配：一大堆技能询问（【鸽王】【轮值】…）都带"弃置"，
+  // 那样这条"手牌上限"的提示会抢在技能弃牌时弹出来，说的不在点上。
+  { id:'discard',
+    when: (t, p) => t === 'ask' && p.req && p.req.kind === 'selectCards'
+                     && /弃牌阶段|手牌上限/.test(p.req.prompt || ''),
+    text:'手牌不能超过<b>你的当前体力</b> —— 血越少，能存的牌越少。所以把自己打残是很危险的。' },
+
+  { id:'dying',
+    when: (t, p) => t === 'ask' && p.req && p.req.kind === 'choice'
+                     && /濒死|救援|自救/.test(p.req.prompt || ''),
+    text:'有人濒死了。救不救是<b>公开表态</b> —— 谁去救人、谁毫不犹豫地放弃，都会成为别人推理你身份的线索。' },
+
+  { id:'skill',
+    when: (t, p) => t === 'ask' && p.req && p.req.kind === 'playPhase'
+                     && (p.req.skills || []).length > 0,
+    text:'底部亮起的按钮是你的<b>角色技能</b>，每个出牌阶段各能用一次。角色只决定体力和技能，跟胜负无关。' },
+
+  { id:'over',
+    when: t => t === 'over',
+    text:'这就是这个游戏的全部：<b>猜身份、打对手、藏自己</b>。这一局打得怎么样，结算界面会算给你看。' }
+];
+
+/* ---------------- 提示卡 ---------------- */
+function bar(){ return document.getElementById('tutorial-bar'); }
+
+/**
+ * 卡片显隐会改变 #bottom 的高度，而棋盘（圆桌布局）是按**实测尺寸**摆面板的。
+ * 窗口 resize 有监听会自动重摆，这里的高度变化没有任何事件 —— 手动补一发。
+ * （ui.js 那个监听自己会判断是不是圆桌，不是就直接返回，所以随便发。）
+ */
+function relayout(){
+  try { window.dispatchEvent(new Event('resize')); } catch (e){ /* 忽略 */ }
+}
+
+function showHint(text){
+  const b = bar();
+  if (!b) return;
+  const t = b.querySelector('.tut-text');
+  if (t) t.innerHTML = text;
+  b.classList.remove('hide');
+  // 换了一条提示就把入场动画重放一遍 —— 卡片本来就在那儿，
+  // 只悄悄换掉几个字的话，正盯着棋盘的人根本不会注意到。
+  b.style.animation = 'none';
+  void b.offsetWidth;                 // 强制回流，否则浏览器会合并掉这次改动、动画不重放
+  b.style.animation = '';
+  relayout();
+}
+function hideHint(){
+  const b = bar();
+  if (b) b.classList.add('hide');
+  relayout();
+}
+
+/** ui.js 在关键位置调用这个。每一条只在第一次遇到时弹。 */
+T.notify = function(type, payload){
+  if (!T.active) return;
+  payload = payload || {};
+  for (const s of STEPS){
+    if (T.seen[s.id]) continue;
+    if (s.when && !s.when(type, payload)) continue;
+    T.seen[s.id] = true;
+    showHint(s.text);
+    return;
+  }
+};
+
+T.bindBar = function(){
+  const b = bar();
+  if (!b) return;
+  const n = document.getElementById('tut-next');
+  if (n) n.addEventListener('click', hideHint);
+  const x = document.getElementById('tut-exit');
+  if (x) x.addEventListener('click', () => { T.stop(); window.UI.show('start'); });
+};
+
+/* ---------------- 开局 ---------------- */
+
+/** 把玩家的身份换成学生（和场上原来是学生的人对调，保证人数配置不变） */
+function forcePlayerStudent(){
+  const me = G.players[G.humanSeat];
+  if (!me || me.identity === 'student') return;
+  const stu = G.players.filter(p => p !== me && p.identity === 'student')[0];
+  if (!stu) return;
+  const tmp = me.identity;
+  me.identity = stu.identity;
+  stu.identity = tmp;
+  // 院长的身份是公开的，跟着一起换
+  me.revealed = (me.identity === 'dean');
+  stu.revealed = (stu.identity === 'dean');
+}
+
+/** 起手牌固定成四张，每张教一件事 */
+function scriptHand(){
+  const me = G.players[G.humanSeat];
+  me.hand = [];
+  ['上课点名', '代课', '请假条', '借笔记'].forEach(name => {
+    const i = G.deck.findIndex(c => c.name === name);
+    if (i >= 0) me.hand.push(G.deck.splice(i, 1)[0]);
+  });
+  // 院长多给点血：教学局不想两轮就结束
+  const dean = G.players.filter(p => p.identity === 'dean')[0];
+  if (dean){ dean.maxHp = Math.max(dean.maxHp, 6); dean.hp = dean.maxHp; }
+}
+
+T.start = function(){
+  T.stop(true);                        // 先清掉上一次
+  T.active = true;
+  T.seen = {};
+  T.prevLevel = window.AI.getLevel ? window.AI.getLevel() : 'normal';
+  window.AI.setLevel('easy');          // 教学局：电脑温和
+
+  E.initGame({
+    count: 4, mode: 'A', deal: 3, hotseat: false,
+    humanSeats: [0], protect: true, networkRule: false
+  });
+  forcePlayerStudent();
+
+  // 跳过选角界面：直接给玩家第一个候选，其余交给电脑
+  const me = G.players[G.humanSeat];
+  if (me.charChoices && me.charChoices.length) E.assignRole(me.seat, me.charChoices[0]);
+  E.finalizeRoles();
+  E.finalizeGame();
+  E.dealInitialHands();
+  scriptHand();
+
+  window.UI.show('game');
+  window.UI.render();
+  E.logBig('—— 新手教学局 ——');
+  E.log('你是学生，把院长打倒就赢。提示会一步步跟到这里。', 'big');
+  T.notify('start', {});
+
+  // 返回整局的 Promise：调用方可以等它跑完（测试就是这么用的）。
+  return E.gameLoop().then(() => {
+    // 打完了：把 AI 强度还原，但提示条留着让玩家看最后一条
+    if (T.prevLevel && window.AI.setLevel) window.AI.setLevel(T.prevLevel);
+    E.log('教学局结束 —— 想再来一局可以点「再来一局」，或者退回开始界面选正式对局。', 'sys');
+  }, () => {});
+};
+
+/**
+ * 结束教学。silent = true 时不处理界面（供 start() 内部重入用）。
+ */
+T.stop = function(silent){
+  const was = T.active;
+  T.active = false;
+  hideHint();
+  if (T.prevLevel && window.AI.setLevel) window.AI.setLevel(T.prevLevel);
+  T.prevLevel = null;
+  return was;
+};
+
+})();
+
+  </script>
   <script>/* ===== main.js ===== */
 /* =========================================================
  *  东秦杀：点名册  ·  启动与流程编排
@@ -8491,7 +9296,20 @@ function bindStartScreen(){
       cfg[k] = b.classList.contains('on');
     });
   });
+  // 电脑强度：立即生效（AI 是全局单档，下一局就用新的）
+  document.querySelectorAll('#pick-ai button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#pick-ai button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      window.Net.setAiLevel(b.dataset.ai);
+    });
+  });
   document.getElementById('btn-start').addEventListener('click', startSetup);
+  const bt = document.getElementById('btn-tutorial');
+  if (bt) bt.addEventListener('click', () => {
+    if (window.Net && Net.isOnline()) Net.leave();
+    window.Tutorial.start();
+  });
   const bn = document.getElementById('btn-net');
   if (bn) bn.addEventListener('click', () => {
     if (window.Net && Net.isOnline()) Net.leave();     // 已经在房间里就先退掉
@@ -8513,6 +9331,15 @@ function bindStartScreen(){
   }
   const bsr = document.getElementById('btn-save-replay');
   if (bsr) bsr.addEventListener('click', () => Net.saveReplay());
+  // 分享版：把整局打成一个自带游戏的 .html，对方点开就能放
+  const bsh = document.getElementById('btn-share-replay');
+  if (bsh) bsh.addEventListener('click', () => {
+    bsh.disabled = true;
+    Promise.resolve(Net.exportReplayHtml()).then(
+      () => { bsh.disabled = false; },
+      e => { bsh.disabled = false; window.UI.toast('导出失败：' + ((e && e.message) || e), 'warn'); }
+    );
+  });
   document.getElementById('btn-again').addEventListener('click', () => {
     window.UI.closeModal();
     // 联机中：退掉房间回到开始界面（Net.leave 自己会切屏）
@@ -8544,6 +9371,7 @@ function startSetup(){
     fxLayer.innerHTML = '';
   }
   if (window.Net && Net.isOnline()) Net.leave();   // 别让单机局盖掉联机局
+  if (window.Tutorial) Tutorial.stop();            // 从教学局切到正式对局时把提示条收掉
   E.initGame({
     count: cfg.count, mode: cfg.mode, deal: cfg.deal, aiOthers: cfg.ai,
     protect: cfg.protect, hotseat: !cfg.ai, networkRule:false
@@ -8736,6 +9564,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.UI.bindTopbar();
     window.UI.bindReplayBar();
     window.UI.bindHostGone();
+    if (window.Tutorial) window.Tutorial.bindBar();
     window.UI.show('start');
     if (window.Net){
       // 点别人的邀请链接进来的（?room=1234）：直接进房间，

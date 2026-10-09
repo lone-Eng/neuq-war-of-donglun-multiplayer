@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>file:// 导出探针</title></head>
+<!--
+  验证"双击 index.html 也能导出分享版"这条路。
+
+  必须**从 file:// 打开**，而且**不加 --allow-file-access-from-files** ——
+  那正是双击打开时的处境：浏览器不允许网页读自己的 js/ 和 css/，fetch 直接失败，
+  只能靠 tools/build-sources.ps1 打包出来的 js/sources.js（<script src> 是放行的）。
+
+  这个探针管的是**源码兜底**这一段：包在不在、能不能加载、解出来是不是完整。
+  "导出的文件打开后能不能放"由 export_probe.html 那边验（它跑在 http 下，
+  骨架取自真实的 index.html）。两边合起来才覆盖完整。
+
+  结果写进 #RESULTS，run_tests.ps1 用 --dump-dom 取回来。
+-->
+<body style="background:#0d1117;color:#e9eef7;font-family:monospace;padding:16px">
+<pre id="RESULTS">RUNNING</pre>
+<div id="app"></div>
+
+<script src="../js/data.js"></script>
+<script src="../js/fx.js"></script>
+<script src="../js/ai.js"></script>
+<script src="../js/engine.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/net.js"></script>
+<script>
+(function () {
+  'use strict';
+  var out = [];
+  function ok(n, c, d){ out.push((c ? '[ok]   ' : '[FAIL] ') + n + ((!c && d) ? '  <- ' + d : '')); }
+  function done(){ document.getElementById('RESULTS').textContent = out.join('\n'); }
+
+  var D = window.GameData, E = window.Engine, Net = window.Net;
+
+  ok('真的是从 file:// 打开的（否则这个探针等于没测）', location.protocol === 'file:', location.protocol);
+
+  // 先确认 fetch 确实被挡住 —— 如果它在这儿能跑，说明跑测试时被加了放宽标志，
+  // 那这个探针就什么都没验到，是个假绿。
+  fetch('data.js').then(
+    function (){ ok('fetch 被挡住（走的是源码包那条路）', false, 'fetch 居然成功了'); },
+    function (){ ok('fetch 被挡住（走的是源码包那条路）', true); }
+  ).then(function (){
+
+    // 造一局假对局，让导出的文件有东西可放
+    E.initGame({ count: 4, mode: 'A', deal: 3, hotseat: false, humanSeats: [0] });
+    var g = window.G;
+    g.players.forEach(function (p, i) { p.char = D.CHARACTERS[i]; });
+    E.finalizeRoles(); E.finalizeGame();
+    g.players.forEach(function (p) {
+      for (var i = 0; i < 4; i++) { var c = g.deck.pop(); if (c) p.hand.push(c); }
+    });
+    Net.indexDeck();
+    Net.startRec(0, 4);
+    Net.recT0 = Date.now() - 12000;
+    for (var k = 0; k < 40; k++){
+      Net.rec.frames.push({
+        t: k * 300,
+        s: k % 4 === 0 ? Net.project(0, false) : null,
+        ev: k === 2 ? [{ k: 'floatText', a: [1, '-1', 'dmg'] }] : null
+      });
+    }
+
+    return Net.buildReplayHtml().then(function (html){
+      ok('file:// 下也能生成分享版 HTML', typeof html === 'string' && html.length > 250000, html && html.length);
+      ok('带上了复盘数据', html.indexOf('id="replay-data"') > 0);
+      // 四条标记都在 → 源码包真的把六个模块都还回来了，不是只回来一部分
+      ok('源码包把六个模块都还回来了',
+         html.indexOf('===== data.js =====') > 0 && html.indexOf('===== fx.js =====') > 0 &&
+         html.indexOf('===== ai.js =====') > 0 && html.indexOf('===== engine.js =====') > 0 &&
+         html.indexOf('===== ui.js =====') > 0 && html.indexOf('===== net.js =====') > 0);
+      // CSS 也一样：file:// 下 <link> 能加载但读不出文本，只能靠包里那份
+      ok('样式也进来了（不是裸骨架）',
+         html.indexOf('player-panel') > 0 && html.indexOf('#tutorial-bar') > 0);
+      ok('内联源码里没有裸的脚本结束标签',
+         html.split('</scr' + 'ipt').length === 9, html.split('</scr' + 'ipt').length);
+
+      // 生成出来还不够 —— 用户要的是"能**保存出来**"。
+      // 拦下导出时那次 a.click()，确认它真的发起了一次 .html 下载。
+      var clicked = null;
+      var realClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function (){
+        clicked = { name: this.download, href: this.href };
+      };
+      return Net.exportReplayHtml().then(function (){
+        HTMLAnchorElement.prototype.click = realClick;
+        ok('导出按钮真的发起了一次下载', !!clicked);
+        ok('下载的是 .html（不是要另存的 .json）',
+           !!clicked && /\.html$/.test(clicked.name), clicked && clicked.name);
+        ok('下载地址是个 blob（内容就在页面里，不依赖任何外部文件）',
+           !!clicked && /^blob:/.test(clicked.href || ''),
+           clicked && String(clicked.href || '').slice(0, 24));
+        done();
+      }, function (e){
+        HTMLAnchorElement.prototype.click = realClick;
+        ok('导出按钮没抛异常', false, (e && e.message) || e);
+        done();
+      });
+    }, function (e){
+      ok('file:// 下也能生成分享版 HTML', false, (e && e.message) || e);
+      done();
+    });
+  }).catch(function (e){
+    ok('探针抛异常', false, (e && e.message) || String(e));
+    done();
+  });
+})();
+</script>
+</body>
+</html>

@@ -35,7 +35,20 @@ function bindStartScreen(){
       cfg[k] = b.classList.contains('on');
     });
   });
+  // 电脑强度：立即生效（AI 是全局单档，下一局就用新的）
+  document.querySelectorAll('#pick-ai button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#pick-ai button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      window.Net.setAiLevel(b.dataset.ai);
+    });
+  });
   document.getElementById('btn-start').addEventListener('click', startSetup);
+  const bt = document.getElementById('btn-tutorial');
+  if (bt) bt.addEventListener('click', () => {
+    if (window.Net && Net.isOnline()) Net.leave();
+    window.Tutorial.start();
+  });
   const bn = document.getElementById('btn-net');
   if (bn) bn.addEventListener('click', () => {
     if (window.Net && Net.isOnline()) Net.leave();     // 已经在房间里就先退掉
@@ -57,6 +70,15 @@ function bindStartScreen(){
   }
   const bsr = document.getElementById('btn-save-replay');
   if (bsr) bsr.addEventListener('click', () => Net.saveReplay());
+  // 分享版：把整局打成一个自带游戏的 .html，对方点开就能放
+  const bsh = document.getElementById('btn-share-replay');
+  if (bsh) bsh.addEventListener('click', () => {
+    bsh.disabled = true;
+    Promise.resolve(Net.exportReplayHtml()).then(
+      () => { bsh.disabled = false; },
+      e => { bsh.disabled = false; window.UI.toast('导出失败：' + ((e && e.message) || e), 'warn'); }
+    );
+  });
   document.getElementById('btn-again').addEventListener('click', () => {
     window.UI.closeModal();
     // 联机中：退掉房间回到开始界面（Net.leave 自己会切屏）
@@ -88,6 +110,7 @@ function startSetup(){
     fxLayer.innerHTML = '';
   }
   if (window.Net && Net.isOnline()) Net.leave();   // 别让单机局盖掉联机局
+  if (window.Tutorial) Tutorial.stop();            // 从教学局切到正式对局时把提示条收掉
   E.initGame({
     count: cfg.count, mode: cfg.mode, deal: cfg.deal, aiOthers: cfg.ai,
     protect: cfg.protect, hotseat: !cfg.ai, networkRule:false
@@ -280,6 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.UI.bindTopbar();
     window.UI.bindReplayBar();
     window.UI.bindHostGone();
+    if (window.Tutorial) window.Tutorial.bindBar();
     window.UI.show('start');
     if (window.Net){
       // 点别人的邀请链接进来的（?room=1234）：直接进房间，

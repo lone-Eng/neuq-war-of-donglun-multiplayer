@@ -441,6 +441,34 @@ input.room-code{font-family:ui-monospace,Consolas,"Courier New",monospace;
 #over-body{font-size:14px;line-height:2;color:var(--text);}
 #over-body .ov-line{margin-bottom:5px;}
 #over-body .ov-win{color:var(--green);font-weight:700;}
+#over-body .ov-sec{margin:20px 0 9px;color:var(--dim);font-size:13px;letter-spacing:3px;}
+
+/* ---- 赛后评分 / MVP ---- */
+.ov-mvp{display:inline-flex;align-items:center;gap:14px;margin:18px auto 4px;
+  padding:12px 24px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(232,196,106,.16),rgba(40,32,14,.5));
+  border:2px solid var(--gold);box-shadow:0 0 30px rgba(232,196,106,.25);}
+.ov-mvp.me{box-shadow:0 0 44px rgba(232,196,106,.5);}
+.ov-mvp .mvp-badge{font-size:13px;font-weight:900;letter-spacing:3px;color:#2a2008;
+  background:linear-gradient(180deg,#f0d089,#d8ac48);padding:3px 12px;border-radius:20px;}
+.ov-mvp .mvp-who{font-size:19px;font-weight:800;letter-spacing:1px;color:#fff;}
+.ov-mvp .mvp-score{font-size:15px;color:var(--gold);font-weight:700;
+  font-variant-numeric:tabular-nums;}
+.ov-mvp .mvp-you{font-size:13px;color:var(--green);font-weight:700;}
+
+.score-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px;}
+.score-table th,.score-table td{border:1px solid var(--line);padding:6px 8px;text-align:center;}
+.score-table th{background:rgba(120,150,190,.1);color:var(--dim);font-weight:600;font-size:12px;}
+.score-table td:nth-child(2),.score-table th:nth-child(2){text-align:left;}
+.score-table tr.me{background:rgba(90,168,224,.09);}
+.score-table tr.won td{color:#cfe8d8;}
+.score-table tr.mvp{background:rgba(232,196,106,.14);}
+.score-table tr.mvp td{color:var(--gold);font-weight:700;}
+.score-table td.sc{font-size:15px;font-variant-numeric:tabular-nums;}
+.score-table td .w{color:var(--green);font-weight:700;}
+.score-table td.dean{color:var(--gold);} .score-table td.staff{color:var(--blue);}
+.score-table td.mole{color:var(--purple);}
+.score-note{margin-top:9px;font-size:11.5px;color:var(--dim);line-height:1.9;}
 
 /* ---------------- Toast ---------------- */
 #toast-layer{position:fixed;left:50%;top:70px;transform:translateX(-50%);z-index:200;pointer-events:none;}
@@ -496,6 +524,38 @@ input.room-code{font-family:ui-monospace,Consolas,"Courier New",monospace;
 .fx-ci-row .v{flex:1;color:#dde6f2;}
 .fx-ci-row .v.hl{color:#ffd98a;font-weight:700;}
 .fx-ci-row.lim .v{color:#93a3b8;font-size:12px;line-height:1.6;}
+/* ---------------- 新手教学提示卡 ----------------
+   它原来是屏幕最顶上一条通栏细边 —— 太容易被当成装饰无视掉。
+   现在是一张浮在手牌上方的大卡片：圆角、亮边、外发光、入场动画，外加一个「教学」角标。
+   （字号/行高必须在 .tut-text 上重新写一遍：文件下方还有一条给引导弹窗用的
+     .tut-text{font-size:13.5px;line-height:2}，那条会直接命中这里的 .tut-text。） */
+#tutorial-bar{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  /* 收窄居中：通栏的话文字和按钮之间会空出一大片，看着还是"一条"而不是"一张卡"。
+     宽度和手牌区对齐（手牌也是居中排的）。 */
+  max-width:860px;margin:0 auto 10px;padding:14px 18px;border-radius:14px;
+  background:linear-gradient(180deg,#25455f,#16293b);
+  border:1px solid rgba(126,198,255,.8);
+  box-shadow:0 0 0 1px rgba(126,198,255,.14), 0 10px 30px rgba(0,0,0,.55),
+             0 0 28px rgba(90,168,224,.3);
+  font-size:14.5px;line-height:1.75;color:#dce8f6;
+  animation:tutIn .3s cubic-bezier(.2,.9,.3,1.25);
+}
+#tutorial-bar.hide{display:none;}
+@keyframes tutIn{from{opacity:0;transform:translateY(12px) scale(.97);}to{opacity:1;transform:none;}}
+#tutorial-bar .tut-badge{
+  flex:none;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:800;letter-spacing:2px;
+  color:#0d1a26;background:linear-gradient(180deg,#93d3ff,#4fa3dd);
+  box-shadow:0 0 14px rgba(120,190,255,.55);
+}
+#tutorial-bar .tut-icon{flex:none;font-size:20px;}
+#tutorial-bar .tut-text{flex:1;min-width:0;font-size:14.5px;line-height:1.75;color:#dce8f6;}
+#tutorial-bar .tut-text b{color:var(--gold);font-weight:800;}
+#tutorial-bar .tut-actions{flex:none;display:flex;gap:8px;margin-left:auto;}
+#tutorial-bar button{flex:none;}
+button.tut{background:linear-gradient(180deg,#4a7f9e,#2c546f);border-color:#6aa8c8;}
+button.tut:hover{background:linear-gradient(180deg,#5a91b0,#356078);}
+
 /* ---------------- 房主掉线条 ---------------- */
 #host-gone-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
   padding:8px 14px;background:linear-gradient(180deg,#3a2418,#2a1a12);

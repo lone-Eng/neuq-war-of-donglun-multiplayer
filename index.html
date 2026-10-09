@@ -47,6 +47,16 @@
       </div>
 
       <div class="form-row">
+        <label>电脑强度</label>
+        <div class="btn-group" id="pick-ai">
+          <button data-ai="easy">简单</button>
+          <button data-ai="normal" class="on">普通</button>
+          <button data-ai="hard">困难</button>
+        </div>
+      </div>
+      <p class="hint ai-hint" id="ai-hint">普通：电脑会做基本的身份推断，攻守均衡。</p>
+
+      <div class="form-row">
         <label>可选规则</label>
         <div class="btn-group" id="pick-opt">
           <button data-opt="protect" class="toggle on">保护轮（第一圈不死）</button>
@@ -61,6 +71,7 @@
       </div>
 
       <div class="start-actions">
+        <button id="btn-tutorial" class="tut big">新手教学局</button>
         <button id="btn-start" class="primary big">单机游戏</button>
         <button id="btn-net" class="big">联机对战</button>
         <button id="btn-rules" class="big">规则速查</button>
@@ -148,6 +159,19 @@
     </main>
 
     <footer id="bottom">
+      <!-- 新手教学提示卡。
+           放在**手牌正上方**、做成一张有边框和光晕的大卡片，而不是屏幕最顶上那条细边 ——
+           细边太容易被无视，而新手这会儿眼睛正好在手牌这一带。
+           #bottom 是 flex:none，所以卡片撑开时被压的是上面的棋盘，手牌不会被挤走。 -->
+      <div id="tutorial-bar" class="hide">
+        <span class="tut-badge">教学</span>
+        <span class="tut-icon">💡</span>
+        <span class="tut-text"></span>
+        <span class="tut-actions">
+          <button id="tut-next" class="mini">知道了</button>
+          <button id="tut-exit" class="mini">退出教学</button>
+        </span>
+      </div>
       <!-- 选目标时的操作条（点棋盘选人，这里出「确定 / 取消 / 列表选择」） -->
       <div id="target-bar" class="hide"></div>
       <!-- 旁观席专用条 -->
@@ -177,7 +201,8 @@
       <div id="over-body"></div>
       <div class="start-actions">
         <button id="btn-again" class="primary big">再来一局</button>
-        <button id="btn-save-replay" class="big">保存这局复盘</button>
+        <button id="btn-save-replay" class="big">保存复盘</button>
+        <button id="btn-share-replay" class="big">导出分享版</button>
       </div>
     </div>
   </div>
@@ -191,6 +216,7 @@
 <script src="js/ui.js"></script>
 <script src="js/selftest.js"></script>
 <script src="js/net.js"></script>
+<script src="js/tutorial.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

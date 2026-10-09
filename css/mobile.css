@@ -38,6 +38,15 @@ button{ touch-action:manipulation; }
   #phase-label{ font-size:10.5px; padding:3px 9px; }
   button.mini{ padding:6px 9px; font-size:11.5px; border-radius:8px; }
 
+  /* 教学卡片：窄屏上让正文独占一行。
+     不这么做的话角标 + 图标 + 两个按钮会全挤在第一行，正文只剩一百多像素宽，
+     被折成四五行短句 —— 反而更难读。第一行放角标和按钮，正文整行铺开。 */
+  #tutorial-bar{ padding:12px 14px; gap:8px 10px; font-size:13.5px; border-radius:12px; }
+  #tutorial-bar .tut-text{ flex:1 1 100%; order:2; font-size:13.5px; line-height:1.7; }
+  #tutorial-bar .tut-actions{ order:1; margin-left:auto; }
+  #tutorial-bar .tut-icon{ font-size:17px; }
+  #tutorial-bar .tut-badge{ font-size:11px; padding:2px 9px; letter-spacing:1px; }
+
   /* 棋盘改为纵向：座位条 → 出牌区 */
   #board{ flex-direction:column; }
   #board-main{ flex:1; min-height:0; }
