@@ -16,6 +16,15 @@
       <h1 class="logo">东秦杀<span>：点名册</span></h1>
       <p class="slogan">早八、点名、代课、查寝、论文查重——在东秦大学，翻开身份牌之前，谁都不要信。</p>
 
+      <!-- 玩法：按钮从 E.formats() 现场生成（以后加玩法不用回来改这里）。
+           选了固定人数的玩法（2V2 = 4 人、斗地主 = 3 人）时，
+           下面的「玩家人数」和「身份模式」两行会被整行隐藏（见 main.js syncCountLock） -->
+      <div class="form-row">
+        <label>玩法</label>
+        <div class="btn-group" id="pick-format"></div>
+      </div>
+      <p class="hint" id="format-hint"></p>
+
       <div class="form-row">
         <label>玩家人数</label>
         <div class="btn-group" id="pick-count">
@@ -47,25 +56,6 @@
       </div>
 
       <div class="form-row">
-        <label>电脑强度</label>
-        <div class="btn-group" id="pick-ai">
-          <button data-ai="easy">简单</button>
-          <button data-ai="normal" class="on">普通</button>
-          <button data-ai="hard">困难</button>
-        </div>
-      </div>
-      <p class="hint ai-hint" id="ai-hint">普通：电脑会做基本的身份推断，攻守均衡。</p>
-
-      <div class="form-row">
-        <label>可选规则</label>
-        <div class="btn-group" id="pick-opt">
-          <button data-opt="protect" class="toggle on">保护轮（第一圈不死）</button>
-          <button data-opt="ai" class="toggle on">AI 接管其他玩家</button>
-          <button data-opt="fast" class="toggle">快速动画</button>
-        </div>
-      </div>
-
-      <div class="form-row">
         <label>身份配置预览</label>
         <div id="identity-preview" class="identity-preview"></div>
       </div>
@@ -74,10 +64,14 @@
         <button id="btn-tutorial" class="tut big">新手教学局</button>
         <button id="btn-start" class="primary big">单机游戏</button>
         <button id="btn-net" class="big">联机对战</button>
+        <button id="btn-settings" class="big">设置</button>
+        <button id="btn-chars" class="big">角色图鉴</button>
+        <button id="btn-cards" class="big">卡牌图鉴</button>
         <button id="btn-rules" class="big">规则速查</button>
         <button id="btn-replay" class="big">看复盘</button>
         <input type="file" id="replay-file" accept=".json,application/json" hidden>
       </div>
+      <p class="hint">电脑强度、拓展包、音量这些不是每局都要动的东西，都收进「设置」了。</p>
       <p class="footnote">所有角色、身份、事件均为虚构游戏设定，请勿对号入座。</p>
     </div>
   </div>
@@ -137,6 +131,7 @@
         <button id="btn-speed" class="mini">节奏：标准</button>
         <button id="btn-log-toggle" class="mini">日志</button>
         <button id="btn-rule-panel" class="mini">规则</button>
+        <button id="btn-settings-top" class="mini" title="设置（音频 / 开局选项 / 拓展包）">⚙</button>
       </div>
     </header>
 
@@ -188,6 +183,28 @@
   <div id="screen-net" class="screen">
     <div class="net-box" id="net-box"></div>
   </div>
+
+  <!-- ============ 角色图鉴 / 卡牌图鉴 ============ -->
+  <div id="screen-chars" class="screen">
+    <div class="codex-box">
+      <div class="codex-head">
+        <h2>角色图鉴</h2>
+        <button id="chars-back" class="mini">← 返回</button>
+      </div>
+      <div id="chars-body" class="codex-body"></div>
+    </div>
+  </div>
+
+  <div id="screen-cards" class="screen">
+    <div class="codex-box">
+      <div class="codex-head">
+        <h2>卡牌图鉴</h2>
+        <button id="cards-back" class="mini">← 返回</button>
+      </div>
+      <div id="cards-body" class="codex-body"></div>
+    </div>
+  </div>
+
 
   <!-- ============ 弹窗层 ============ -->
   <div id="fx-layer"></div>

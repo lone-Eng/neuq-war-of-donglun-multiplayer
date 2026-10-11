@@ -524,6 +524,72 @@ input.room-code{font-family:ui-monospace,Consolas,"Courier New",monospace;
 .fx-ci-row .v{flex:1;color:#dde6f2;}
 .fx-ci-row .v.hl{color:#ffd98a;font-weight:700;}
 .fx-ci-row.lim .v{color:#93a3b8;font-size:12px;line-height:1.6;}
+/* ---------------- 图鉴（角色 / 卡牌） ----------------
+   两张全屏列表页，从开始界面进。版面比设置弹窗宽松得多，因为要放完整技能文案。 */
+.codex-box{max-width:1080px;margin:0 auto;padding:22px 22px 70px;height:100%;
+  display:flex;flex-direction:column;box-sizing:border-box;}
+.codex-head{flex:none;display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line);}
+.codex-head h2{font-size:21px;letter-spacing:3px;margin:0;color:var(--gold);}
+.codex-body{flex:1;overflow:auto;padding-right:8px;}
+.codex-sec{font-size:12px;letter-spacing:2px;color:var(--dim);margin:18px 0 8px;}
+.codex-sec:first-child{margin-top:0;}
+/* 小类标题（基本牌→点名/代课…，装备牌→武器/防具…）：左边一道金线，
+   比大类标题小一号、淡一点，一眼能看出是同一大类底下的分组 */
+.codex-sub{font-size:11.5px;letter-spacing:1px;color:#a9b8cd;margin:13px 0 7px;
+  padding-left:9px;border-left:3px solid rgba(232,196,106,.45);}
+.codex-grid{display:flex;flex-wrap:wrap;gap:12px;}
+.codex-card{
+  width:328px;padding:12px 14px;border-radius:14px;box-sizing:border-box;
+  background:linear-gradient(180deg,rgba(40,50,64,.92),rgba(26,33,43,.95));
+  border:1px solid var(--line2);box-shadow:var(--shadow);
+}
+.codex-card.wide{width:100%;}
+.cc-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:2px;}
+.cc-head b{font-size:16px;color:var(--text);letter-spacing:1px;}
+.cc-hp{font-size:11.5px;color:var(--dim);flex:none;}
+.cc-title{font-size:11.5px;color:var(--dim);margin-bottom:8px;}
+.cc-skill{font-size:12.5px;line-height:1.75;color:#cfdae8;margin-top:7px;
+  padding-top:7px;border-top:1px dashed rgba(120,140,170,.2);}
+.cc-skill:first-of-type{border-top:none;padding-top:0;}
+.cc-skill em{font-style:normal;font-size:10.5px;color:var(--dim);
+  border:1px solid var(--line2);border-radius:6px;padding:0 5px;margin-right:6px;}
+.cc-skill b{color:var(--gold);}
+.cc-skill.off{opacity:.55;}
+.cc-note{font-size:11.5px;color:var(--dim);margin-top:8px;}
+.cc-suits{font-size:12px;color:#b9c6d8;line-height:1.9;word-break:break-all;margin:6px 0;}
+.cc-detail{font-size:12px;line-height:1.8;color:var(--dim);margin-top:6px;}
+.cc-detail b{color:#9fb0c6;font-weight:600;}
+
+/* ---------------- 设置栏 ----------------
+   音频 / 开局选项 / 拓展包都收在这儿。每行是「标签 + 控件」，窄屏自动换行。 */
+.settings-body{padding:2px;}
+.set-sec{
+  font-size:11.5px;letter-spacing:2px;color:var(--dim);
+  margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--line);
+}
+.set-sec:first-child{margin-top:2px;}
+.set-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;font-size:13.5px;}
+.set-row .set-label{flex:none;min-width:96px;color:var(--text);}
+.set-row input[type=range]{flex:1;min-width:110px;max-width:200px;accent-color:var(--gold);}
+.set-note{font-size:11.5px;color:var(--dim);flex:1 1 100%;}
+.set-row .set-note{flex:1 1 100%;}
+
+/* ---------------- 禁用武将（2V2 开局前，简化版禁选） ----------------
+   名单最多 37 个，所以做成可滚动的小卡片网格 */
+.ban-list{display:flex;flex-wrap:wrap;gap:8px;max-height:52vh;overflow:auto;padding:4px 2px;}
+.ban-item{
+  display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+  width:132px;padding:8px 10px;border-radius:10px;text-align:left;
+  background:linear-gradient(180deg,rgba(40,50,64,.92),rgba(26,33,43,.95));
+  border:1px solid var(--line2);cursor:pointer;transition:.15s;
+}
+.ban-item:hover{border-color:var(--red);transform:translateY(-2px);}
+.ban-item b{font-size:13.5px;color:var(--text);}
+.ban-item span{font-size:11px;color:var(--dim);}
+.ban-item i{font-size:10.5px;color:var(--dim);font-style:normal;}
+.ban-item.off{opacity:.35;cursor:not-allowed;}
+
 /* ---------------- 新手教学提示卡 ----------------
    它原来是屏幕最顶上一条通栏细边 —— 太容易被当成装饰无视掉。
    现在是一张浮在手牌上方的大卡片：圆角、亮边、外发光、入场动画，外加一个「教学」角标。

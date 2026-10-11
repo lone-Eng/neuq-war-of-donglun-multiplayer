@@ -30,6 +30,326 @@ function ac(){
   if (Sfx.ctx.state === 'suspended') { try { Sfx.ctx.resume(); } catch (e) {} }
   return Sfx.ctx;
 }
+/* =========================================================
+ *  一·B、背景音乐（BGM）
+ * =========================================================
+ * 音频文件放在 audio/bgm/ 下，页面按常见文件名逐个试 ——
+ * **找不到就静默停手**（单文件手机版没有 audio/ 目录，这是预期行为，不是错误）。
+ *
+ * 为什么不把曲子内联进单文件版：一首 3 分钟的曲子 base64 之后约 4 MB，
+ * 单文件会从 510 KB 胀到 5 MB 以上，把"一个文件拷到手机就能玩、不联网"
+ * 这个最大的好处毁掉。所以那边就是没 BGM，换来的是便携。
+ *
+ * 拿曲子：跑 tools\get-bgm.ps1（它从公版音乐库拉，CC0、无需署名）。
+ */
+const BGM_CANDIDATES = ['bgm.mp3', 'bgm.m4a', 'bgm.ogg', 'bgm.wav'];
+const Bgm = { el: null, on: true, vol: 0.35, tried: false, ready: false };
+try {
+  if (localStorage.getItem('dqk_bgm') === '0') Bgm.on = false;
+  const v = parseFloat(localStorage.getItem('dqk_bgm_vol'));
+  if (!isNaN(v)) Bgm.vol = Math.max(0, Math.min(1, v));
+} catch (e) { /* file:// 下 localStorage 可能不可用 */ }
+
+/** 从 <script src> 反推 audio/<子目录>/ 的位置 —— 页面在子目录下也能找对 */
+function audioBase(sub){
+  const s = document.querySelector('script[src*="fx.js"]');
+  const src = s ? (s.getAttribute('src') || '') : 'js/fx.js';
+  const i = src.lastIndexOf('/');
+  const dir = i >= 0 ? src.slice(0, i + 1) : 'js/';              // 'js/' 或 '../js/'
+  return dir.replace(/js\/$/, '') + 'audio/' + sub + '/';        // '' 或 '../'
+}
+function bgmBase(){ return audioBase('bgm'); }
+function voiceBase(){ return audioBase('voice'); }
+
+Bgm.load = function(){
+  if (Bgm.tried) return;
+  Bgm.tried = true;
+  let idx = 0;
+  const tryNext = () => {
+    if (idx >= BGM_CANDIDATES.length) return;      // 一个都没有：保持安静
+    const el = new Audio();
+    el.loop = true;
+    el.preload = 'auto';
+    el.volume = Bgm.on ? Bgm.vol : 0;
+    el.addEventListener('canplaythrough', () => {
+      Bgm.el = el; Bgm.ready = true;
+      if (Bgm.on) Bgm.play();
+    }, { once: true });
+    el.addEventListener('error', tryNext, { once: true });
+    el.src = bgmBase() + BGM_CANDIDATES[idx++];
+    el.load();
+  };
+  tryNext();
+};
+/** 播放。浏览器不允许无交互自动播放 —— 所以只在用户点过页面之后调才有效 */
+Bgm.play = function(){
+  if (!Bgm.on || !Bgm.el) return;
+  const p = Bgm.el.play();
+  if (p && p.catch) p.catch(() => { /* 被自动播放策略拦下：等下一次用户操作 */ });
+};
+Bgm.pause = function(){ if (Bgm.el){ try { Bgm.el.pause(); } catch (e) {} } };
+Bgm.setOn = function(v){
+  Bgm.on = !!v;
+  try { localStorage.setItem('dqk_bgm', v ? '1' : '0'); } catch (e) {}
+  if (Bgm.on){ Bgm.load(); Bgm.play(); } else Bgm.pause();
+  return Bgm.on;
+};
+Bgm.setVol = function(v){
+  Bgm.vol = Math.max(0, Math.min(1, v));
+  try { localStorage.setItem('dqk_bgm_vol', String(Bgm.vol)); } catch (e) {}
+  if (Bgm.el) Bgm.el.volume = Bgm.on ? Bgm.vol : 0;
+  return Bgm.vol;
+};
+FX.bgm = Bgm;
+
+// 浏览器不会让页面自己出声。第一次点/按键时补上（这时候才允许播）。
+// 挂四种事件：合成点击（自动化测试、部分辅助工具）**不会**触发 pointerdown，
+// 只挂 pointerdown 的话那种情况下 BGM 永远不加载。
+(function kickBgm(){
+  const EV = ['pointerdown', 'mousedown', 'keydown', 'touchstart'];
+  const go = () => {
+    EV.forEach(e => document.removeEventListener(e, go));
+    Bgm.load();
+  };
+  EV.forEach(e => document.addEventListener(e, go));
+})();
+
+/* =========================================================
+ *  一·C、语音报牌与技能台词
+ * =========================================================
+ * 两条路，优先用第一条：
+ *   1. **音色包**：audio/voice/ 下由 tools\make-voice.ps1 预生成的 mp3
+ *      （开源模型 Kokoro-82M-v1.1-zh 配音，12 种音色）。设置里能逐个试听、切换。
+ *   2. **系统语音**（兜底）：浏览器自带的 speechSynthesis，零文件、完全离线，
+ *      音色取决于玩家系统装了哪些中文语音包。
+ * 没生成过音色包 / 单文件手机版没有 audio/ 目录 / 某个句子还没配音 ——
+ * 全都会静默退回系统语音，功能不残缺（和 BGM 找不到曲子就安静是一个道理）。
+ */
+const Voice = { on: true, sex: 'female', pack: 'sys-female' };
+/** 音色包清单（audio/voice/packs.json）。ready 之前一律走系统语音。 */
+const Packs = { list: [], ready: false, tried: false, ext: 'mp3', dir: '', pending: null };
+try {
+  if (localStorage.getItem('dqk_voice') === '0') Voice.on = false;
+  // 老版本只存了男女声：把它当成"选了系统男声/系统女声"，别让选择器高亮和实际发音对不上
+  const s = localStorage.getItem('dqk_voice_sex');
+  if (s === 'male' || s === 'female'){ Voice.sex = s; Voice.pack = 'sys-' + s; }
+  const p = localStorage.getItem('dqk_voice_pack');
+  if (p) Voice.pack = p;
+  if (Voice.pack === 'sys-male') Voice.sex = 'male';
+  else if (Voice.pack === 'sys-female') Voice.sex = 'female';
+} catch (e) { /* 忽略 */ }
+
+/** 系统里可用的中文语音（各平台差别很大） */
+Voice.list = function(){
+  if (!window.speechSynthesis) return [];
+  try { return window.speechSynthesis.getVoices().filter(v => /^zh/i.test(v.lang || '')); }
+  catch (e){ return []; }
+};
+
+/**
+ * 系统语音念一句。连着出牌时先 cancel —— 否则会排成一长队，念的永远比出的慢。
+ * 男女声主要靠音高区分：系统的中文语音包未必真的分性别。
+ */
+function sysSpeak(text){
+  if (!window.speechSynthesis || !text) return;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.lang = 'zh-CN';
+    u.rate = 1.05;
+    u.pitch = (Voice.sex === 'male') ? 0.75 : 1.4;
+    const vs = Voice.list();
+    if (vs.length){
+      const want = vs.filter(v => Voice.sex === 'male'
+        ? /男|yunxi|kangkang|liang|male/i.test(v.name || '')
+        : /女|xiaoxiao|xiaoyi|huihui|female/i.test(v.name || ''));
+      u.voice = want[0] || vs[0];
+    }
+    window.speechSynthesis.speak(u);
+  } catch (e) { /* 语音不可用就当没有这个功能 */ }
+}
+
+/* ---- 音色包 ----
+ * 目录、文件名约定和台词表都由 tools\voicegen.py 生成时定死：
+ *    audio/voice/packs.js             清单，游戏读这个（<script> 加载，file:// 也能用）
+ *    audio/voice/packs.json           同一份内容，给人看 / 给脚本校验用
+ *    audio/voice/<id>/c-<牌名>.mp3     45 张牌
+ *    audio/voice/<id>/s-<技能名>.mp3   74 句技能台词
+ * 名字里的中文直接当文件名 —— 项目里都是普通中文词，服务器和浏览器都认。
+ */
+Voice.loadPacks = function(){
+  if (Packs.ready) return Promise.resolve(true);
+  if (Packs.pending) return Packs.pending;      // 别并发重复请求同一个文件
+  Packs.tried = true;
+  const base = voiceBase();
+  // 用 <script> 而不是 fetch 读清单 —— 这一点很关键：
+  // **双击 index.html（file://）时浏览器不允许 fetch 本地文件**，用 fetch 的话
+  // 音色列表会只剩「系统女声/系统男声」，生成的 12 个音色一个都点不到。
+  // <script> 在 file:// 下照常能加载（index.html 自己就是这么加载 js/*.js 的），
+  // js/sources.js 当初也是为同一个原因才存在的。
+  // 生成端把清单同时写成 packs.json（给人看/给脚本校验）和 packs.js（给游戏读）。
+  Packs.pending = new Promise(resolve => {
+    const s = document.createElement('script');
+    s.async = true;
+    s.src = base + 'packs.js';
+    s.onload = () => {
+      const j = window.DQK_VOICE_PACKS;
+      if (!j || !j.packs) return resolve(false);
+      Packs.dir = base;
+      Packs.ext = j.ext || 'mp3';
+      Packs.list = j.packs.filter(p => p && p.id && p.dir);
+      Packs.ready = Packs.list.length > 0;
+      // 之前选的音色可能已经不在清单里了（换过音色集、重新生成过）：
+      // 自动回到系统女声，免得上一个选中项都没有、看起来像坏了。
+      // 注意别把「系统男声」也当成"不在清单里" —— 它本来就不该在清单里。
+      if (Packs.ready && Voice.pack !== 'sys-female' && Voice.pack !== 'sys-male' &&
+          !Packs.list.some(p => p.id === Voice.pack)) Voice.setPack('sys-female');
+      resolve(Packs.ready);
+    };
+    // 没生成过音色包 / 单文件手机版没有 audio/ 目录：都是预期情况，安静走系统语音
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  }).then(v => { Packs.pending = null; return v; });   // 失败不入缓存：下次（比如开设置）可以重试
+  return Packs.pending;
+};
+
+/** 清单读进来没有（设置界面靠它决定要不要显示「音色包正在加载」） */
+Voice.packsReady = function(){ return Packs.ready; };
+
+/** 测试钩子：忘掉读过的清单，好让测试重新 mock fetch 再读一遍 */
+Voice._resetPacks = function(){
+  Packs.tried = false; Packs.ready = false; Packs.list = []; Packs.dir = '';
+  Packs.ext = 'mp3'; Packs.pending = null;
+};
+
+/** 测试钩子：系统语音的出口（项目里没装 speechSynthesis 时它自己会静默） */
+Voice._sysSpeak = sysSpeak;
+
+/**
+ * 音色包文件放不出来时走这里（文件还没生成 / 名字对不上 / 浏览器不支持这个格式）。
+ * 退回系统语音 —— 宁可音色不一致，也不能让战斗忽然变哑。
+ */
+Voice._onPackError = function(text){
+  if (Voice.on && text) Voice._sysSpeak(text);
+};
+
+/** 设置界面用：系统两个 + 每个音色包一项 */
+Voice.packList = function(){
+  const out = [{ k: 'sys-female', label: '系统女声' }, { k: 'sys-male', label: '系统男声' }];
+  Packs.list.forEach(p => out.push({ k: p.id, label: p.name || p.id }));
+  return out;
+};
+
+/** 当前选的是不是音色包（不是那两个系统选项） */
+Voice.currentPack = function(){
+  if (Voice.pack === 'sys-female' || Voice.pack === 'sys-male') return null;
+  return Packs.list.filter(p => p.id === Voice.pack)[0] || null;
+};
+
+Voice.setPack = function(k){
+  const ok = (k === 'sys-female' || k === 'sys-male') || Packs.list.some(p => p.id === k);
+  if (!ok) return Voice.pack;
+  Voice.pack = k;
+  if (k === 'sys-male' || k === 'sys-female') Voice.sex = (k === 'sys-male') ? 'male' : 'female';
+  try {
+    localStorage.setItem('dqk_voice_pack', Voice.pack);
+    if (k === 'sys-male' || k === 'sys-female') localStorage.setItem('dqk_voice_sex', Voice.sex);
+  } catch (e) { /* 忽略 */ }
+  return Voice.pack;
+};
+
+/** 掐掉正在播的那一句（和 speechSynthesis.cancel 的用意一致） */
+Voice.stopAudio = function(){
+  if (Voice._el){ try { Voice._el.pause(); } catch (e) {} Voice._el = null; }
+};
+
+/** 播一个音色包文件；文件不在（还没配音 / 名字对不上）就退回系统语音，别哑。 */
+Voice.playUrl = function(url, fallbackText){
+  try {
+    Voice.stopAudio();
+    // 刚切成音色包时，上一条还排在系统语音队列里的句子也得掐掉，不然两句会叠着响
+    if (window.speechSynthesis){ try { window.speechSynthesis.cancel(); } catch (e) {} }
+    const el = new Audio();
+    el.addEventListener('error', () => Voice._onPackError(fallbackText), { once: true });
+    el.src = url;
+    Voice._el = el;
+    const p = el.play();
+    if (p && p.catch) p.catch(() => { /* 自动播放被拦下：等下一次用户操作 */ });
+    return true;
+  } catch (e){ return false; }
+};
+
+/**
+ * 台词 -> 音色包里的文件名。
+ * 生成端（tools\voicegen.py 的 file_name()）按同一条规则写文件，改这里要两边一起改。
+ *   kind: 'card' = 牌名（报牌）／'skill' = 技能台词
+ */
+Voice.fileName = function(text, kind){
+  return (kind === 'skill' ? 's-' : 'c-') + text + '.' + Packs.ext;
+};
+
+/** 念一句。选了音色包就用文件，否则（或文件缺失）用系统语音。 */
+Voice.speak = function(text, kind){
+  if (!Voice.on || !text) return;
+  const pack = Voice.currentPack();
+  if (pack){
+    const url = Packs.dir + pack.dir + '/' + Voice.fileName(text, kind);
+    if (Voice.playUrl(url, text)) return;
+  }
+  sysSpeak(text);
+};
+/* ---- 技能语音 ----
+ * 台词表在 data.js 的 SKILL_LINES。这里只负责"什么时候念"。
+ *
+ * 为什么在日志里嗅探而不是在技能实现里逐行调用：全项目 70 多个技能散在引擎各处，
+ * 而且每个技能生效时**都会留一条带技能名的日志** —— 一个钩子就够，
+ * 也不用担心以后新加技能时忘了插语音。
+ */
+const SKILL_LINES = D.SKILL_LINES || {};
+const lastSkillLine = {};
+let lastSkillLineAt = 0;
+
+/** 测试钩子：清掉"刚念过技能台词"的节流状态，让报牌那条能独立验证 */
+FX._resetVoiceThrottle = function(){
+  lastSkillLineAt = 0;
+  for (const k in lastSkillLine) delete lastSkillLine[k];
+};
+
+FX.saySkillFromLog = function(text){
+  if (!Voice.on || !text) return;
+  const s = String(text);
+  for (const name in SKILL_LINES){
+    if (s.indexOf(name) < 0) continue;
+    const now = Date.now();
+    // 【正义】【过滤】这种每次挨打都会触发，不节流的话会念成一片。
+    // 技能名在全局唯一（一个技能只属于一个角色），所以按技能名节流就够。
+    if (lastSkillLine[name] && now - lastSkillLine[name] < 4000) return;
+    lastSkillLine[name] = now;
+    lastSkillLineAt = now;
+    Voice.speak(SKILL_LINES[name], 'skill');
+    return;
+  }
+};
+
+Voice.setOn = function(v){
+  Voice.on = !!v;
+  try { localStorage.setItem('dqk_voice', v ? '1' : '0'); } catch (e) {}
+  if (!Voice.on){
+    if (window.speechSynthesis){ try { window.speechSynthesis.cancel(); } catch (e) {} }
+    Voice.stopAudio();
+  }
+  return Voice.on;
+};
+/** 选系统语音的男女声（等价于把音色切到「系统女声／系统男声」） */
+Voice.setSex = function(s){
+  Voice.setPack(s === 'male' ? 'sys-male' : 'sys-female');
+  return Voice.sex;
+};
+FX.voice = Voice;
+
+// 启动就把音色包清单读进来（几 KB）。找不到就当没有这回事，安静走系统语音。
+Voice.loadPacks();
+
 function osc(o){
   if (!Sfx.on) return;
   const c = ac(); if (!c) return;
@@ -193,7 +513,7 @@ FX.addToExchange = function(casterName, card, targetsText, opts){
         D.rankLabel(card.rank) + D.suitOf(card).sym + '</span>' : '') +
       (opts.tag ? '<span class="exch-tag">' + opts.tag + '</span>' : '') +
     '</div>' +
-    (opts.response ? '' : '<div class="exch-line">' + (det.effect || meta.desc || '') + '</div>') +
+    (opts.response ? '' : '<div class="exch-line">' + D.md(det.effect || meta.desc || '') + '</div>') +
     (!opts.response && tgt ? '<div class="exch-line tgt">作用对象：' + tgt + '</div>' : '');
   row.appendChild(thumb);
   row.appendChild(body);
@@ -206,6 +526,11 @@ FX.addToExchange = function(casterName, card, targetsText, opts){
 FX.cardPlay = async function(casterName, card, targetsText, opts){
   opts = opts || {};
   FX.addToExchange(casterName, card, targetsText, opts);
+  // 语音报牌。放在这里而不是引擎里 —— 引擎每出一张牌都会走这里，
+  // 而且复盘回放重演 cardPlay 时也会跟着念 ✅
+  // 但刚念过技能台词就先别念牌名：那句话是角色的"人设"，被牌名打断等于白说
+  // （Voice.speak 内部会 cancel 掉上一句）
+  if (card && card.name && Date.now() - lastSkillLineAt > 1500) Voice.speak(card.name, 'card');
   await sleep(opts.hold || 620);
 };
 
@@ -347,10 +672,12 @@ FX.death = async function(player){
   const lay = document.getElementById('fx-layer') || document.body;
   const el = document.createElement('div');
   el.className = 'fx-overlay fx-death';
-  const id = D.IDENTITIES[player.identity];
+  // 走 E.sideInfo：团队形式没有身份，直接解引用会在"任何人死亡"时崩
+  const side = window.Engine ? window.Engine.sideInfo(player)
+                             : { cls:'', name:'—' };
   el.innerHTML = '<div class="fx-death-box"><div class="fx-death-mark">☠</div>' +
     '<div class="fx-death-name">' + player.name + ' 阵亡</div>' +
-    '<div class="fx-death-id ' + id.cls + '">身份揭示：' + id.name + '</div></div>';
+    '<div class="fx-death-id ' + side.cls + '">身份揭示：' + side.name + '</div></div>';
   lay.appendChild(el);
   await sleep(1100);
   el.classList.add('out');
@@ -443,12 +770,13 @@ FX.showCardDetail = function(card){
     '</div>';
   const box = body.querySelector('.dt-card');
   if (UI.cardEl) box.appendChild(UI.cardEl(card, { big: true }));
+  // 每一条都过 md()：牌面文案里允许写 **粗体**，不过就是字面星号
   const rows = [
     ['目标', det.target || '—'],
     ['距离', det.dist || '—'],
-    ['效果', det.effect || m.desc || '—'],
-    ['限制', det.limit || '—'],
-    ['结算顺序', det.order || '—']
+    ['效果', D.md(det.effect || m.desc || '—')],
+    ['限制', D.md(det.limit || '—')],
+    ['结算顺序', D.md(det.order || '—')]
   ];
   const table = document.createElement('div');
   rows.forEach(r => {
@@ -464,14 +792,15 @@ FX.showCardDetail = function(card){
 FX.showCharDetail = function(p){
   if (!p || !p.char) return;
   const c = p.char;
-  const known = p.revealed || p.identity === 'dean' || (window.G && p.seat === G.humanSeat);
-  const id = D.IDENTITIES[p.identity];
+  const side = window.Engine ? window.Engine.sideInfo(p) : { cls:'', name:'—', visible:false };
+  // 原判据里有 `p.seat === G.humanSeat`（自己看自己），E.sideInfo 的 visible 不含这一条
+  const known = side.visible || !!(window.G && p.seat === G.humanSeat);
   const body = document.createElement('div');
   let html = '<div class="dt-head">' +
-    '<div class="dt-avatar ' + (known ? id.cls : 'unknown') + '">' + (c ? c.name.charAt(0) : '?') + '</div>' +
+    '<div class="dt-avatar ' + (known ? side.cls : 'unknown') + '">' + (c ? c.name.charAt(0) : '?') + '</div>' +
     '<div class="dt-meta">' +
       '<div class="dt-line"><b>' + (c ? c.name : '未知') + '</b>' +
-        '<span class="dt-suit ' + (known ? id.cls : '') + '">' + (known ? id.name : '身份未知') + '</span></div>' +
+        '<span class="dt-suit ' + (known ? side.cls : '') + '">' + (known ? side.name : '身份未知') + '</span></div>' +
       '<div class="dt-line sub">' + (c ? c.title : '') + '</div>' +
       '<div class="dt-line sub">体力 ' + Math.max(0, p.hp) + ' / ' + p.maxHp +
         '　手牌 ' + p.hand.length + '　手牌上限 ' + (window.Engine ? Engine.handLimit(p) : p.hp) + '</div>' +
@@ -480,7 +809,7 @@ FX.showCharDetail = function(p){
     html += '<div class="dt-sec">技能</div>';
     c.skills.forEach(s => {
       html += '<div class="dt-skill"><div class="dt-skill-name">【' + s.name + '】<span class="dt-type">' + s.type + '</span></div>' +
-        '<div class="dt-skill-text">' + s.text + '</div></div>';
+        '<div class="dt-skill-text">' + D.md(s.text) + '</div></div>';
     });
   }
   const gears = D.EQUIP_SLOTS.map(k => p.equips[k]).filter(Boolean);

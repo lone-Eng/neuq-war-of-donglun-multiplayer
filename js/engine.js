@@ -13,9 +13,263 @@ const { CARDS, IDENTITIES, PROBE_CARDS } = D;
 const G = {
   players: [], deck: [], discard: [], turnSeat: 0, round: 1, turnId: 0,
   phase: '', over: false, humanSeat: 0, opts: {}, log: [], startSeat: 0,
-  speed: 1.35, firstRound: true, roundDone: new Set(), harmLog: []
+  speed: 1.35, firstRound: true, roundDone: new Set(), harmLog: [],
+  format: 'identity',          // 'identity' | 'landlord' | 'team2v2'
+  packs: {},                   // 启用的角色拓展包
+  roster: []                   // 本局武将名单（基础 + 启用的拓展包）
 };
 window.G = G;
+
+/* =========================================================
+ *  对局形式（format）
+ * =========================================================
+ * 三种形式共用同一套规则引擎，差异**全部收在这张表里**。
+ *
+ *   规矩：`G.format` 只允许在这张表和它下面的 fmt() 里被读到。
+ *   ui.js / net.js / main.js / ai.js 一律不准直接读，只能调 E.sideInfo /
+ *   E.sideLabel / E.winOf 这些导出函数。这条纪律是"三种形式共用一套规则"
+ *   不腐烂的唯一保证 —— 一旦有人在自己文件里写 `if (G.format === ...)`，
+ *   分支就会开始到处长。
+ *
+ *  身份局的内容是**今天代码的逐行搬运**，行为逐字节不变。
+ */
+function identityVictory(){
+  const alive = alivePlayers();
+  const dean = G.players.find(p => p.identity === 'dean');
+  if (!dean){ endGame(null, '场上没有院长'); return; }   // 旧代码这里会直接抛异常
+  const students = G.players.filter(p => p.identity === 'student');
+  const moles = G.players.filter(p => p.identity === 'mole');
+  if (alive.length === 0){ endGame(null, '全员阵亡'); return; }
+  if (!dean.alive){
+    if (alive.length === 1 && alive[0].identity === 'mole'){ endGame('mole', '院长死亡且卧底成为唯一存活者'); return; }
+    endGame('student', '院长死亡');
+    return;
+  }
+  const bad = students.concat(moles).filter(p => p.alive);
+  if (bad.length === 0){ endGame('dean', '学生与卧底全部出局，院长存活'); return; }
+}
+function identityKillReward(source, victim){
+  if (victim.identity === 'student'){
+    log(source.name + ' 击杀学生，摸 3 张牌（奖惩）', 'sys');
+    return drawCards(source, 3, '击杀学生');
+  }
+  if (victim.identity === 'staff' && source.identity === 'dean'){
+    log(source.name + ' 误杀教务，弃置所有手牌与装备区的牌（奖惩）', 'dmg');
+    const all = source.hand.splice(0).concat(
+      D.EQUIP_SLOTS.map(k => { const c = source.equips[k]; source.equips[k] = null; return c; }).filter(Boolean));
+    toDiscard(all);
+    return Promise.resolve();
+  }
+  if (victim.identity === 'mole' && G.opts.moleReward) return drawCards(source, 1, '击杀卧底（可选奖励）');
+  return Promise.resolve();
+}
+
+/* ---------------- 2V2 ---------------- */
+function team2v2Victory(){
+  const a = G.players.filter(p => p.side === 'A' && p.alive).length;
+  const b = G.players.filter(p => p.side === 'B' && p.alive).length;
+  if (a === 0 && b === 0){ endGame(null, '两队同归于尽'); return; }
+  if (a === 0){ endGame('B', '红队全员出局'); return; }
+  if (b === 0){ endGame('A', '蓝队全员出局'); return; }
+}
+/** 1、4 号位一队（红），2、3 号位一队（蓝）—— 交错坐，左右都是敌人 */
+function team2v2Setup(){
+  G.players.forEach((p, i) => { p.side = (i === 0 || i === 3) ? 'A' : 'B'; });
+}
+
+/* ---------------- 斗地主 ---------------- */
+function landlordVictory(){
+  const ll = G.players.filter(p => p.side === 'landlord' && p.alive).length;
+  const fm = G.players.filter(p => p.side === 'farmer' && p.alive).length;
+  if (ll === 0 && fm === 0){ endGame(null, '全员阵亡'); return; }
+  if (ll === 0){ endGame('farmer', '地主阵亡'); return; }
+  if (fm === 0){ endGame('landlord', '两个农民都出局了'); return; }
+}
+
+/* 地主的两个专属技能。它们**不属于任何角色** —— 硬塞进 char.skills 会撞上
+ * selftest 的"角色牌不含阵营字段"那条，也会让 20 个角色凭空多出技能。
+ * 走的是 p.extraSkills 这条路（hasSkill 里加了支路）。 */
+const SIDE_SKILLS = {
+  飞扬: { name:'飞扬', type:'身份技·主动',
+          text:'查考勤阶段开始时，你可以弃置两张牌，然后弃置你通知栏里的所有牌。' },
+  跋扈: { name:'跋扈', type:'身份技·锁定',
+          text:'你摸牌阶段多摸一张牌；出牌阶段可以多使用一张点名类牌。' }
+};
+
+/* ---------------- 斗地主的叫分 ----------------
+ * 开局前的一段交互：按座位顺序每人叫一次（0/1/2/3），必须高于当前最高分，
+ * 叫满 3 分立即定地主，全不叫则由首位玩家当地主。
+ * 状态放在 G.bid 里（可序列化），主客机都靠这三个函数推进。 */
+function bidNext(){
+  if (!G.bid) G.bid = { order: G.players.map(p => p.seat), best: 0, bestSeat: -1, done: {} };
+  const b = G.bid;
+  for (const s of b.order){
+    if (b.done[s] === undefined) return s;
+  }
+  return -1;
+}
+/** 提交一个座位的叫分（0 = 不叫）。不合法（不高于当前最高分）按"不叫"处理 */
+function bidSubmit(seat, score){
+  const b = G.bid;
+  if (!b) return;
+  score = Math.max(0, Math.min(3, score | 0));
+  if (score > 0 && score <= b.best) score = 0;
+  b.done[seat] = score;
+  if (score > b.best){ b.best = score; b.bestSeat = seat; }
+  // 叫到 3 分直接定局 —— 后面的人不用再叫了
+  if (score === 3) b.order.forEach(s => { if (b.done[s] === undefined) b.done[s] = 0; });
+}
+/** 叫分收尾：定地主、写阵营、重发候选。返回地主座位 */
+function bidFinish(){
+  const b = G.bid;
+  const seat = b.bestSeat >= 0 ? b.bestSeat : b.order[0];
+  // 全不叫时按**底分 1** 算 —— 否则"地主胜 = 叫分×2"会直接是 0 分
+  G.bidScore = b.best > 0 ? b.best : 1;
+  G.bidDone = true;
+  G.players.forEach(p => { p.side = (p.seat === seat) ? 'landlord' : 'farmer'; });
+  logBig('叫分结束：' + (seat + 1) + ' 号位当地主（' + G.bidScore + ' 分）');
+  redealForLandlord();
+  return seat;
+}
+/**
+ * 叫分结束后**重发候选**：地主 5 张、农民各 3 张。
+ * initGame 里发的那一轮是在还不知道谁是地主的时候发的，只能作废。
+ */
+function redealForLandlord(){
+  const pool = shuffle(G.roster.slice());
+  G.dealPer = 3;
+  for (const p of G.players){
+    if (!p.isHuman){ p.charChoices = []; continue; }
+    const n = (p.side === 'landlord') ? 5 : 3;
+    p.charChoices = pool.splice(0, Math.min(n, pool.length));
+    G.dealPer = Math.max(G.dealPer, p.charChoices.length);
+  }
+  G.charRest = pool;
+}
+
+/* ---------------- 2V2 的禁选 ----------------
+ * 简化版剧本：四个座位各禁一名武将，禁掉的从本局名单里剔除，然后重新发候选。
+ * （完整版 —— 展示候选池 → 两队交替禁用 4 名 → 选入备选池 → 每队选 2 名登场 ——
+ *   以后只替换这三个函数即可：上层只认"谁该禁、禁了什么"，不认具体剧本。）
+ * 状态放在 G.ban 里，可序列化。 */
+function banNext(){
+  if (!G.ban) G.ban = { order: G.players.map(p => p.seat), done: {} };
+  for (const s of G.ban.order) if (G.ban.done[s] === undefined) return s;
+  return -1;
+}
+function banSubmit(seat, charId){
+  const b = G.ban;
+  if (!b || b.done[seat] !== undefined) return;
+  b.done[seat] = charId || null;
+  if (charId && G.bannedIds.indexOf(charId) < 0) G.bannedIds.push(charId);
+}
+function banFinish(){
+  G.banDone = true;
+  const names = G.bannedIds.map(id => {
+    const c = D.allCharacters().filter(x => x.id === id)[0];
+    return c ? c.name : id;
+  });
+  logBig(names.length ? '禁用：' + names.join('、') : '没人禁用武将');
+  redealAfterBan();
+}
+/** 禁选之后重发候选（禁掉的武将不再出现） */
+function redealAfterBan(){
+  const pool = shuffle(G.roster.filter(c => G.bannedIds.indexOf(c.id) < 0));
+  G.dealPer = 3;
+  for (const p of G.players){
+    if (!p.isHuman){ p.charChoices = []; continue; }
+    p.charChoices = pool.splice(0, Math.min(3, pool.length));
+    G.dealPer = Math.max(G.dealPer, p.charChoices.length);
+  }
+  G.charRest = pool;
+}
+
+const FORMAT = {
+  identity: {
+    key: 'identity', label: '身份局',
+    seats: null,                                        // null = 人数由玩家选（4–8）
+    identityConfig: n => D.IDENTITY_CONFIG[n] || D.IDENTITY_CONFIG[5],
+    // 院长先手；没有院长时退回 0 号位（旧代码在这里会抛异常）
+    firstSeat: () => { const d = G.players.find(p => p.identity === 'dean'); return d ? d.seat : 0; },
+    hpBonus: p => (p.identity === 'dean' ? 1 : 0),
+    handSize: p => 4 + (p.identity === 'dean' ? 1 : 0)
+                    + ((G.players.length === 4 && p.identity === 'student') ? 1 : 0),
+    victory: identityVictory,
+    killReward: identityKillReward,
+    sideOf: p => p.identity,
+    sideName: k => (D.IDENTITIES[k] ? D.IDENTITIES[k].name : '？'),
+    sideCls: k => (D.IDENTITIES[k] ? D.IDENTITIES[k].cls : ''),
+    // 角色面板角标用的是**另一套**类名（dean / revealed-xxx），
+    // 和顶栏 .bid 用的 id.cls 不是一回事，别合并
+    sideTagCls: p => p.identity ? ((p.identity === 'dean') ? 'dean' : ('revealed-' + p.identity)) : 'hidden',
+    goal: k => (D.IDENTITIES[k] ? D.IDENTITIES[k].win : ''),
+    visible: p => !!(p.revealed || p.identity === 'dean'),
+    winOf: (w, p) => (w === 'dean' ? (p.identity === 'dean' || p.identity === 'staff') : (p.identity === w)),
+    drawCount: (p, base) => base,
+    setup: null
+  },
+  /* ---------------- 2V2 竞技 ----------------
+   * 无身份，红蓝两队各 2 人，队友明置；一方两人全灭即负。
+   * 座位交错（1&4 红、2&3 蓝），所以每个人左右都是敌人。
+   * 目标单局 5 分钟 —— 起手与先手补偿见 handSize / drawCount。 */
+  team2v2: {
+    key: 'team2v2', label: '2V2',
+    seats: 4,                                             // 固定 4 人，人数不给选
+    identityConfig: () => null,
+    firstSeat: () => 0,                                   // 1 号位先手
+    hpBonus: () => 0,
+    // 1 号位 4 张但第一回合只摸 1 张；4 号位起手 5 张 —— 两头补偿，中间两人 4 张
+    handSize: p => (p.seat === 3 ? 5 : 4),
+    victory: team2v2Victory,
+    killReward: () => Promise.resolve(),                  // 杀死队友不弃牌，杀死敌人也没奖励
+    sideOf: p => p.side,
+    sideName: k => (k === 'A' ? '红队' : k === 'B' ? '蓝队' : '？'),
+    sideCls: k => (k === 'A' ? 'team-a' : k === 'B' ? 'team-b' : ''),
+    // 复用身份局那两套角标配色（红队像学生、蓝队像教务），省一套 CSS
+    sideTagCls: p => (p.side === 'A' ? 'revealed-student'
+                    : p.side === 'B' ? 'revealed-staff' : 'hidden'),
+    goal: k => (k === 'A' ? '击败蓝队两人' : k === 'B' ? '击败红队两人' : ''),
+    visible: () => true,                                  // 队友明置 = 全员阵营公开
+    winOf: (w, p) => p.side === w,
+    drawCount: (p, base) => (G.turnId === 1 && p.seat === 0) ? 1 : base,
+    setup: team2v2Setup
+  },
+  /* ---------------- 斗地主 ----------------
+   * 1 个地主 vs 2 个农民。地主多 1 点体力上限、多两个专属技能、
+   * 起手 4 张 + 3 张底牌；先行动的农民 4 张，后行动的农民 5 张。
+   * 阵营由开局前的**叫分**决定（见 landlordBid），不是 initGame 里定的。 */
+  landlord: {
+    key: 'landlord', label: '斗地主',
+    seats: 3,
+    identityConfig: () => null,
+    // 地主先手。叫分还没走完时没有地主 → 退回 0 号位（不会崩）
+    firstSeat: () => {
+      const ll = G.players.filter(p => p.side === 'landlord')[0];
+      return ll ? ll.seat : 0;
+    },
+    hpBonus: p => (p.side === 'landlord' ? 1 : 0),
+    // 地主 4 张 + 底牌 3 张（底牌不公开）；先行动的农民 4 张，后行动的 5 张
+    handSize: p => {
+      if (p.side === 'landlord') return 7;
+      const fm = G.players.filter(x => x.side === 'farmer').sort((a, b) => a.seat - b.seat);
+      return (fm.length > 1 && p === fm[fm.length - 1]) ? 5 : 4;
+    },
+    victory: landlordVictory,
+    killReward: () => Promise.resolve(),      // 地主和农民之间没有身份奖惩
+    sideOf: p => p.side,
+    sideName: k => (k === 'landlord' ? '地主' : k === 'farmer' ? '农民' : '？'),
+    sideCls: k => (k === 'landlord' ? 'dean' : k === 'farmer' ? 'student' : ''),
+    sideTagCls: p => (p.side === 'landlord' ? 'dean' : p.side === 'farmer' ? 'revealed-student' : 'hidden'),
+    goal: k => (k === 'landlord' ? '击败两个农民' : '击败地主'),
+    visible: () => true,                      // 叫分一结束，地主是谁全场都知道
+    winOf: (w, p) => p.side === w,
+    // 跋扈让地主多摸一张
+    drawCount: (p, base) => base + (hasSkill(p, '跋扈') ? 1 : 0),
+    setup: null                               // 阵营由叫分决定，见 landlordBid
+  }
+};
+/** 当前形式的实现表。G.format 没设（旧存档/测试）时按身份局走。 */
+function fmt(){ return FORMAT[G.format] || FORMAT.identity; }
 
 /* ---------------- 工具 ---------------- */
 function sleep(ms){ return new Promise(r => setTimeout(r, Math.max(0, ms * (G.speed||1)))); }
@@ -37,6 +291,9 @@ function log(text, cls, only, redacted){
   }
   G.log.push(entry);
   if (window.UI && UI.pushLog) UI.pushLog(text, cls);
+  // 技能语音：全项目每个技能生效时都会留一条带技能名的日志，
+  // 所以在这里嗅探一次就够 —— 不用在 70 多个技能实现里各插一行（见 fx.js）
+  if (window.FX && FX.saySkillFromLog) FX.saySkillFromLog(text);
 }
 function logBig(t){ log(t, 'big'); }
 
@@ -70,7 +327,17 @@ function orderFrom(seat){
 function curTurnPlayer(){ return G.players[G.turnSeat]; }
 
 /* ---------------- 技能判定 ---------------- */
-function hasSkill(p, name){ return p.char && p.char.skills.some(s => s.name === name); }
+/**
+ * 技能判定。全项目唯一的入口（引擎 / UI / AI 共 ~80 处调用）。
+ *
+ * 第二条支路给**身份技**用（地主的【飞扬】【跋扈】）—— 它们不属于任何角色，
+ * 塞进 char.skills 会撞上 selftest 的"角色牌不含阵营字段"，也会让 20 个角色凭空多技能。
+ * 身份局里 p.extraSkills 永远是 undefined，所以这条支路对老玩法零影响。
+ */
+function hasSkill(p, name){
+  if (p.char && p.char.skills.some(s => s.name === name)) return true;
+  return !!(p.extraSkills && p.extraSkills.indexOf(name) >= 0);
+}
 function skillUsed(p, name){ return p.skillsUsedThisTurn && p.skillsUsedThisTurn[name]; }
 function markSkillUsed(p, name){
   // 同一个技能一回合内可能被标记两次（playPhase 里两份名单有重叠），
@@ -106,12 +373,16 @@ function distance(a, b){
   return Math.max(1, d);
 }
 function attackRange(p){
-  return p.equips.weapon ? CARDS[p.equips.weapon.name].range : 1;
+  let n = p.equips.weapon ? CARDS[p.equips.weapon.name].range : 1;
+  if (hasSkill(p, '全场紧逼')) n++;     // 老湖人：武器之外的范围加成（全项目第一个非武器来源）
+  return n;
 }
 function inAttackRange(a, b){ return distance(a, b) <= attackRange(a); }
 function handLimit(p){
   let n = Math.max(0, p.hp);
-  if (hasSkill(p, '体能')) n++;
+  if (hasSkill(p, '体能')) n++;      // 波比
+  if (hasSkill(p, '持家')) n += 2;   // 李岩
+  if (hasSkill(p, '挥金')) n += 2;   // 亨利（代价是受伤 +1，见 damage）
   return n;
 }
 
@@ -215,24 +486,84 @@ async function damage(target, amount, source, type, opts){
   opts = opts || {};
   if (!target.alive || amount <= 0) return 0;
   type = type || 'normal';
+
+  /* Hogo【护主】：把这次**普通伤害**整个接过去。
+     放在最前面 —— 接过去之后，原目标身上的防具与减伤技能就都不该再生效了
+     （伤害打在谁身上就按谁的减伤算）。opts.noHuzhu 防止接过去的人再转手，
+     否则两个有护主的角色会互相弹。属性伤害与无来源伤害不能替。 */
+  if (type === 'normal' && !opts.noHuzhu){
+    for (const h of orderFrom(G.turnSeat)){
+      if (!h.alive || h === target) continue;
+      if (!hasSkill(h, '护主') || skillUsed(h, '护主')) continue;
+      if (!h.hand.length && !D.EQUIP_SLOTS.some(k => h.equips[k])) continue;
+      const r = await Ask(h, { kind:'choice',
+        prompt:'【护主】' + target.name + ' 即将受到 ' + amount + ' 点普通伤害，是否弃一张牌代替其承受？',
+        options:[{key:'yes',label:'发动（弃一张牌）'},{key:'no',label:'放弃'}], skillBlock:true });
+      if (r.option !== 'yes') continue;
+      const sel = await Ask(h, { kind:'selectCards', prompt:'【护主】弃置一张牌', from:'self', min:1, max:1 });
+      if (!sel.cards || !sel.cards.length) continue;
+      discardFromHand(h, sel.cards);
+      markSkillUsed(h, '护主');
+      log(h.name + ' 发动【护主】，代替 ' + target.name + ' 承受这 ' + amount + ' 点伤害', 'sys');
+      if (window.UI) UI.render();
+      return await damage(h, amount, source, type, Object.assign({}, opts, { noHuzhu:true }));
+    }
+  }
+
   let dmg = amount;
   const bonus = [];
   // 雨衣：受到火焰伤害 +1
   if (type === 'fire' && target.equips.armor && target.equips.armor.name === '雨衣' && !opts.ignoreArmor){
     dmg++; bonus.push('雨衣 +1');
   }
+  // 张金雪【无私】：对体力值**大于自己**的角色造成伤害时 +1（每回合限一次）。
+  // 用通用的 markSkillUsed：它天然被 runTurn 重置、也天然在存档里 ——
+  // 自造一个 p.xxxUsed 标志就得多改两处，而存档那处漏了是不报错的（【过滤】漏过一次）。
+  if (source && source !== target && hasSkill(source, '无私')
+      && !skillUsed(source, '无私') && target.hp > source.hp){
+    markSkillUsed(source, '无私');
+    dmg++; bonus.push('无私 +1');
+  }
   // 医保卡：伤害大于 1 时防止多余伤害
   if (target.equips.armor && target.equips.armor.name === '医保卡' && !opts.ignoreArmor && dmg > 1){
     dmg = 1; bonus.push('医保卡封顶');
   }
   const reductions = [];
+  // 亨利【挥金】：**每轮首次受到伤害 -1**（换来的 2 点手牌上限见 handLimit）。
+  //
+  // 方向是探针逼出来的：原先写的是"受到伤害 +1"，试了三档（不限次 / 每回合首次 /
+  // 每轮首次）分别跑出 0.49 / 0.56 / 0.50 —— 三次都是全场最弱。5 人局一局能跑六七轮，
+  // 每轮多挨 1 点就是多挨六七点，对 4 血角色等于判死刑。既然"代价型"怎么调都最弱，
+  // 就把它反过来做成收益：财富大佬花钱保命，手牌上限 +2 配一个每轮一次的减伤。
+  // 用"记轮号"，不需要谁去重置，也自动进存档（同【过滤】【滑不溜秋】）。
+  if (hasSkill(target, '挥金') && target.marks.flexRound !== G.round){
+    target.marks.flexRound = G.round;
+    dmg--; reductions.push('挥金 -1');
+  }
   // 周志远【正义】
   if (hasSkill(target, '正义') && source && source.hand.length > target.hand.length){ dmg--; reductions.push('正义 -1'); }
-  // 肾小球【过滤】：**每回合首次**受到的非属性伤害 -1
-  // （原来是无次数限制的 -1，而全游戏绝大多数伤害都是 1 点非属性，
-  //   等于免疫主流伤害源 —— 平衡性调整时收紧了）
-  if (hasSkill(target, '过滤') && type === 'normal' && !target.filterUsed){
-    target.filterUsed = true; dmg--; reductions.push('过滤 -1');
+  // 肾小球【过滤】：**每轮首次**受到的非属性伤害 -1
+  // （原来是无次数限制的 -1，等于免疫主流伤害源 → 收紧到"每回合首次" → 再放宽到每轮）
+  //
+  // 用"记轮号"而不是"重置一个布尔标志"：轮号自己会变，所以不需要在回合开始/轮次
+  // 回绕处重置，也不会漏进存档（p.filterUsed 就因为漏进存档，房主掉线换人接手后
+  // 能多减一次伤害）。同样的写法见西鱼【滑不溜手】。
+  if (hasSkill(target, '过滤') && type === 'normal' && target.marks.filterRound !== G.round){
+    target.marks.filterRound = G.round;
+    dmg--; reductions.push('过滤 -1');
+  }
+  // 老石【石肤】：受到的**属性**伤害 -1 —— 和【过滤】正好互补（那个管普通伤害）
+  if (hasSkill(target, '石肤') && (type === 'fire' || type === 'thunder')){
+    dmg--; reductions.push('石肤 -1');
+  }
+  // 老虎【盘踞】：伤害来源在自己攻击范围内时 -1。
+  //
+  // **这里特意不限次**：老虎现在只有 2 点体力上限（手牌上限也跟着只剩 2），
+  // 血量已经替它还了超模的债。早先"2 血 + 盘踞限次"两个削弱叠在一起时，
+  // 平衡探针跑出来它是全场倒数的 0.72（胜率 14%），明显过削。
+  // 判据和【正义】不同：那个比手牌数，这个比距离。
+  if (hasSkill(target, '盘踞') && source && source !== target && inAttackRange(target, source)){
+    dmg--; reductions.push('盘踞 -1');
   }
   // 董启龙【兄弟】：其他角色受伤时弃一张牌令伤害-1
   for (const p of orderFrom(G.turnSeat)){
@@ -281,6 +612,33 @@ async function damage(target, amount, source, type, opts){
     noteStat(source.seat, 'dmg', dmg);          // 赛后评分：实际打出的伤害
   }
 
+  // 超开心【傻乐】：受到伤害后摸一张牌。
+  // 位置特意放在**濒死结算之前** —— 摸到的如果是请假条，就能当场自救，
+  // 这是"受伤立即摸牌"本该有的互动（放到濒死之后这张牌就白摸了）。
+  if (hasSkill(target, '傻乐')) await drawCards(target, 1, '傻乐');
+
+  // 孩子【捣乱】：受伤后伤害来源随机弃一张手牌。无来源（论文查重）不触发。
+  if (hasSkill(target, '捣乱') && source && source !== target && source.alive && source.hand.length){
+    const i = Math.floor(Math.random() * source.hand.length);
+    const c = source.hand[i];
+    discardFromHand(source, [c]);
+    log('【捣乱】：' + source.name + ' 随机弃置了一张手牌', 'sys');
+    if (window.UI) UI.render();
+  }
+
+  /* 老姜【辣手】：受伤后反弹 1 点给伤害来源（每回合限一次）。
+     opts.noRebound 是必须的 —— 场上两个有辣手的人会互相弹到递归爆栈。
+     反伤本身还会再走一遍 damage()，所以濒死/胜负都由引擎照常处理。 */
+  if (hasSkill(target, '辣手') && source && source !== target && source.alive
+      && !skillUsed(target, '辣手') && !opts.noRebound){
+    markSkillUsed(target, '辣手');
+    log('【辣手】：' + target.name + ' 反弹 1 点给 ' + source.name, 'dmg');
+    if (window.UI) UI.render();
+    await sleep(200);
+    await damage(source, 1, target, 'normal', Object.assign({}, opts, { noRebound:true }));
+    if (G.over) return dmg;
+  }
+
   // 濒死
   if (target.hp <= 0){
     const survived = await enterDying(target, source);
@@ -313,6 +671,13 @@ async function heal(target, amount, reason, by){
   if (target.hp > before){
     log(target.name + ' 回复 ' + (target.hp - before) + ' 点体力（' + target.hp + '/' + target.maxHp + '）', 'heal');
     if (window.FX){ FX.floatText(target.seat, '+' + (target.hp - before), 'heal'); FX.sfx('heal'); }
+    // 馒头【热乎】：回复体力时额外摸一张（每回合限一次）。
+    // 只有**真的回了血**才触发 —— 体力已满时 heal 不改变 hp，不该白送一张
+    if (hasSkill(target, '热乎') && !skillUsed(target, '热乎')){
+      markSkillUsed(target, '热乎');
+      if (window.UI) UI.render();
+      await drawCards(target, 1, '热乎');
+    }
   }
   if (window.UI) UI.render();
   await sleep(380);
@@ -320,6 +685,18 @@ async function heal(target, amount, reason, by){
 
 /** 濒死与救援：返回 true 表示存活 */
 async function enterDying(p, source){
+  /* 老猫【九条命】：本局第一次进入濒死时直接回到 1 点，不进入求援流程。
+     放在最前面 —— 排在"本人自救"之前才有意义，否则就得先掏一张请假条了。
+     标志存在 marks 里（marks 整体进存档），不必再改 serializeGame。 */
+  if (hasSkill(p, '九条命') && !p.marks.nineLives){
+    p.marks.nineLives = 1;
+    p.hp = 1;
+    logBig('🐱 ' + p.name + ' 发动【九条命】，原地回到 1 点体力（本局仅此一次）');
+    if (window.FX){ FX.floatText(p.seat, '+1', 'heal'); FX.sfx('heal'); }
+    if (window.UI) UI.render();
+    await sleep(560);
+    return true;
+  }
   logBig('⚠ ' + p.name + ' 进入濒死状态（体力 ' + p.hp + '）');
   if (window.UI) UI.render();
   await sleep(300);
@@ -436,7 +813,9 @@ async function killPlayer(p, source){
     if (!G.killLog) G.killLog = [];
     G.killLog.push({ killer: source.seat, victim: p.seat });
   }
-  logBig('☠ ' + p.name + ' 死亡，身份揭示：' + IDENTITIES[p.identity].name);
+  // 用 fmt().sideName 而不是 IDENTITIES[...]：团队形式下 p.identity 是 null，
+  // 直接解引用会崩，而且崩在"任何人死亡"这条最常走的路上
+  logBig('☠ ' + p.name + ' 死亡，身份揭示：' + fmt().sideName(fmt().sideOf(p)));
   if (window.FX) await FX.death(p);
   // 牌全部进弃牌堆
   const cards = p.hand.splice(0).concat(
@@ -447,41 +826,15 @@ async function killPlayer(p, source){
   if (window.UI) UI.render();
   await sleep(400);
 
-  // 奖惩
-  if (source && source.alive && source !== p){
-    if (p.identity === 'student'){
-      log(source.name + ' 击杀学生，摸 3 张牌（奖惩）', 'sys');
-      await drawCards(source, 3, '击杀学生');
-    } else if (p.identity === 'staff' && source.identity === 'dean'){
-      log(source.name + ' 误杀教务，弃置所有手牌与装备区的牌（奖惩）', 'dmg');
-      const all = source.hand.splice(0).concat(
-        D.EQUIP_SLOTS.map(k => { const c = source.equips[k]; source.equips[k] = null; return c; }).filter(Boolean));
-      toDiscard(all);
-    } else if (p.identity === 'mole' && G.opts.moleReward){
-      await drawCards(source, 1, '击杀卧底（可选奖励）');
-    }
-  }
+  // 奖惩：按对局形式分派（团队形式没有身份，也就没有身份奖惩）
+  if (source && source.alive && source !== p) await fmt().killReward(source, p);
   if (window.UI) UI.render();
   checkVictory();
 }
 
 function checkVictory(){
   if (G.over) return;
-  const alive = alivePlayers();
-  const dean = G.players.find(p => p.identity === 'dean');
-  const students = G.players.filter(p => p.identity === 'student');
-  const moles = G.players.filter(p => p.identity === 'mole');
-  // 平局
-  if (alive.length === 0){ endGame(null, '全员阵亡'); return; }
-  // 卧底胜：院长死亡且仅剩卧底一人
-  if (!dean.alive){
-    if (alive.length === 1 && alive[0].identity === 'mole'){ endGame('mole', '院长死亡且卧底成为唯一存活者'); return; }
-    endGame('student', '院长死亡');
-    return;
-  }
-  // 院方胜：学生与卧底全灭且院长存活
-  const bad = students.concat(moles).filter(p => p.alive);
-  if (bad.length === 0){ endGame('dean', '学生与卧底全部出局，院长存活'); return; }
+  fmt().victory();          // 胜负逻辑按对局形式分派，见文件顶部的 FORMAT 表
 }
 /* ---------------- 赛后评分 ----------------
  * 只奖励"做的事"，不奖励"抽到什么身份" —— 身份输赢已经由阵营分体现了，
@@ -499,10 +852,8 @@ const SCORE_WIN = 30, SCORE_DRAW = 10, SCORE_ALIVE = 8;
 function buildScoreboard(winner){
   const rows = G.players.map(p => {
     const st = statOf(p.seat);
-    const win = !!(winner &&
-      ((winner === 'dean' && (p.identity === 'dean' || p.identity === 'staff')) ||
-       (winner === 'student' && p.identity === 'student') ||
-       (winner === 'mole' && p.identity === 'mole')));
+    // 阵营归属只有这一处实现（fmt().winOf）—— 这里从 4 份重复收敛过来的第 1 份
+    const win = !!(winner && fmt().winOf(winner, p));
     const parts = [];
     let score = 0;
     if (win){ score += SCORE_WIN; parts.push({ label:'阵营胜利', v:SCORE_WIN }); }
@@ -513,8 +864,13 @@ function buildScoreboard(winner){
       if (v > 0){ score += v; parts.push({ label:r.label, v:v }); }
     });
     if (p.alive){ score += SCORE_ALIVE; parts.push({ label:'存活到终局', v:SCORE_ALIVE }); }
+    // sideName / sideCls 由形式表算好一起发出去 —— 结算界面不该自己认识 D.IDENTITIES
+    // （团队玩法下 p.identity 是 null，界面自己查会显示成 "?"）
     return { seat:p.seat, name:p.name, charTitle:(p.char ? p.char.title : ''),
-             identity:p.identity, alive:!!p.alive, win:win,
+             identity:p.identity,
+             sideName: fmt().sideName(fmt().sideOf(p)),
+             sideCls: fmt().sideCls(fmt().sideOf(p)),
+             alive:!!p.alive, win:win,
              stats:st, score:score, parts:parts };
   });
   // MVP：总分最高；并列时比击杀 → 再比伤害 → 再比座位号（小的优先）
@@ -536,14 +892,9 @@ function endGame(winner, reason){
   G.over = true;
   // 旁观席的 humanSeat 是 -1，这里要挡住（联机时每个客户端自己算 humanWin）
   const human = G.players[G.humanSeat];
-  let humanWin = false;
-  if (human){
-    if (winner === 'dean') humanWin = (human.identity === 'dean' || human.identity === 'staff');
-    else if (winner === 'student') humanWin = (human.identity === 'student');
-    else if (winner === 'mole') humanWin = (human.identity === 'mole');
-  }
+  const humanWin = !!(human && winner && fmt().winOf(winner, human));   // 第 2 份
   G.scoreboard = buildScoreboard(winner);
-  logBig('游戏结束：' + (winner ? IDENTITIES[winner].name + '阵营胜利' : '平局') + '（' + reason + '）');
+  logBig('游戏结束：' + (winner ? fmt().sideName(winner) + '阵营胜利' : '平局') + '（' + reason + '）');
   if (window.FX) FX.gameEnd(humanWin);
   if (window.UI && UI.showOver) UI.showOver(winner, reason, humanWin, G.scoreboard);
 }
@@ -782,7 +1133,11 @@ async function useCardInner(user, card, targets){
   if (!user.usedCardsThisTurn) user.usedCardsThisTurn = [];
   user.usedCardsThisTurn.push(card);
   // 使用次数记录（点名类 / 延时类）
-  if (D.ATTACK_CARDS.includes(card.name)) user.usedAttackCardThisPhase = (user.usedAttackCardThisPhase||0) + 1;
+  if (D.ATTACK_CARDS.includes(card.name)){
+    user.usedAttackCardThisPhase = (user.usedAttackCardThisPhase||0) + 1;
+    // Tania【双语】的加成只兑现在**这一张**上（冲锋的虚拟点名不算，它自己只有单目标）
+    user.bilingual = false;
+  }
   if (card.type === 'delayed') user.usedDelayed = (user.usedDelayed||0) + 1;
 
   // 学生证 / 雨衣 的"牌无效"在这里先过滤目标
@@ -829,6 +1184,16 @@ async function useCardInner(user, card, targets){
 
   // 【人脉】：有人使用事件牌时可令其额外摸一张
   if (card.type === 'event' || card.type === 'delayed') await triggerRenmai(user);
+
+  // Tania【板书】：使用事件牌**指定了其他角色**为目标时摸一张（每回合限一次）。
+  // 用 live 而不是 effTargets —— 被【炫富】取消掉的目标不算数。
+  // 只对自己用的牌（如放假通知、小组作业之外的）不触发。
+  if (card.type === 'event' && live.some(t => t !== user)
+      && hasSkill(user, '板书') && !skillUsed(user, '板书')){
+    markSkillUsed(user, '板书');
+    log(user.name + ' 发动【板书】，摸一张牌', 'sys');
+    await drawCards(user, 1, '板书');
+  }
 
   // 辅导员签字：**只在牌真正起作用的那一刻**才能被抵消。
   //   · 普通事件牌 → 就是现在（作用时）
@@ -912,6 +1277,40 @@ async function resolveAttackOne(user, card, target, opts){
   opts = opts || {};
   // 【试卷】锁定技：以"上课点名"指定目标时无视其防具（校园卡/学生证/医保卡/雨衣全部失效）
   const ignoreArmor = !!(user.equips.weapon && user.equips.weapon.name === '试卷' && isPointCard(card));
+
+  /* 西鱼【滑不溜手】：每轮你第一次被点名类牌指定时，此牌对你无效。
+     排在【吠叫】之前 —— 牌都已经无效了，就不该再向使用者收税。
+     用"标记里存的轮号 == 当前轮号"来判断"这一轮已经躲过一次"，天然进存档。 */
+  if (target !== user && isPointCard(card) && hasSkill(target, '滑不溜手')
+      && target.marks.slipperyRound !== G.round){
+    target.marks.slipperyRound = G.round;
+    log('【滑不溜手】：' + target.name + ' 每轮首次被点名无效，【' + card.name + '】落空', 'sys');
+    if (window.UI) UI.render();
+    return;
+  }
+
+  /* Hogo【吠叫】：其他角色对你使用点名类牌时，须先弃一张牌，否则此牌无效。
+     排在代课窗口**之前** —— 牌都已经无效了，就不该再走一遍代课响应。
+     付不出牌（手牌和装备区都空）时直接无效，不用问。 */
+  if (target !== user && isPointCard(card) && hasSkill(target, '吠叫')){
+    let paid = false;
+    if (countPayable(user) > 0){
+      const r = await Ask(user, { kind:'choice',
+        prompt:'【吠叫】' + target.name + ' 有【吠叫】：弃一张牌这张 ' + card.name + ' 才生效，是否弃牌？',
+        options:[{key:'yes',label:'弃一张牌（照常生效）'},{key:'no',label:'不弃（此牌无效）'}], skillBlock:true });
+      if (r.option === 'yes'){
+        const sel = await Ask(user, { kind:'selectCards', prompt:'【吠叫】弃置一张牌', from:'any', min:1, max:1 });
+        if (sel.cards && sel.cards.length){ payCards(user, sel.cards); paid = true; }
+      }
+    }
+    if (!paid){
+      log('【吠叫】：' + card.name + ' 对 ' + target.name + ' 无效'
+          + (countPayable(user) === 0 ? '（' + user.name + ' 无牌可弃）' : ''), 'sys');
+      if (window.UI) UI.render();
+      return;
+    }
+  }
+
   let dodged = false;
   if (target.dodgeBan){
     log(target.name + ' 本回合不能使用"代课"', 'sys');
@@ -958,6 +1357,12 @@ async function resolveAttackOne(user, card, target, opts){
   }
   if (dodged){
     log(card.name + ' 被 ' + target.name + ' 抵消', 'sys');
+    // 老湖人【快攻】：点名类牌被代课抵消时补两张（每回合限一次）
+    if (isPointCard(card) && hasSkill(user, '快攻') && !skillUsed(user, '快攻')){
+      markSkillUsed(user, '快攻');
+      log('【快攻】：' + user.name + ' 的点名被挡下，摸两张牌', 'sys');
+      await drawCards(user, 2, '快攻');
+    }
     return;
   }
   // 教鞭：造成伤害时可改为弃目标两张牌
@@ -1036,9 +1441,18 @@ function isOppositeSex(a, b){
   if (A === 'other' || B === 'other') return true;
   return A !== B;
 }
+/* 性别表（激光笔按它判定"异性"）。
+ * 值只认 '男' / '女' / 'other' 三种；写成 'other' 的等于**恒定算作异性**。
+ * 新增角色必须补进这张表，否则 selftest 会红。 */
 const SEX = { '李心瑶':'女','宋美丽':'女','夜露':'女','奶扣':'女',
   '周志远':'男','王磊':'男','董昌程':'男','史鉴明':'男','数学郭':'男','肾小球':'男','钓鱼老':'男',
-  '董旭':'男','董启龙':'男','王三金':'男','方三水':'男','虎爷':'男','京爷':'男','鸟爷':'男','波比':'男','董伦':'男' };
+  '董旭':'男','董启龙':'男','王三金':'男','方三水':'男','虎爷':'男','京爷':'男','鸟爷':'男','波比':'男','董伦':'男',
+  // 超开心是吉祥物，没有性别设定 —— 'other' 让它对谁都算异性
+  '超开心':'other',
+  // 牢师包
+  'Tania':'女','Hogo':'男','韩鹏':'男','李岩':'女','孩子':'other','亨利':'男','张金雪':'女',
+  // 第一包（英文名进的是称号，姓名保持中文 —— 中文名字才不会打坏 AI 的按名找人）
+  '馒头':'other','老猫':'男','老姜':'男','老瓶':'男','老湖人':'男','老石':'男','老虎':'男','黄熊':'男','西鱼':'男' };
 
 /* ---------------- 其他牌的效果 ---------------- */
 async function resolveDismantle(user, target){
@@ -1249,6 +1663,8 @@ async function nullifyCheck(user, card, opts){
         removeFromHand(p, [c]); toDiscard(c);
         log(p.name + ' 使用【辅导员签字】' + (nullified ? '再次抵消' : '抵消了 ' + card.name), 'sys');
         if (window.FX) FX.addToExchange(p.name, c, '', { response:true, tag: nullified ? '再抵消' : '无效化', sfx:'dodge' });
+        // 韩鹏【批示】：打出辅导员签字就补两张。这里同时覆盖"抵消"和"再抵消"
+        if (hasSkill(p, '批示')) await drawCards(p, 2, '批示');
         nullified = !nullified;
         played = true;
         break;
@@ -1535,6 +1951,206 @@ const SKILLS = {
       const sel = await Ask(p, { kind:'selectCards', prompt:'【轮值】弃置一张手牌', from:'self', min:1, max:1 });
       if (sel.cards && sel.cards.length) discardFromHand(p, sel.cards);
     }
+  },
+  /* L-01 Tania */
+  async 双语(p){
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【双语】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    p.bilingual = true;      // 由 useCardInner 在本回合下一张点名类牌用掉时清除
+    log(p.name + ' 发动【双语】：本回合下一张点名类牌可额外指定一名攻击范围内的角色', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* L-03 韩鹏 */
+  async 分管(p, targets){
+    const t = targets[0]; if (!t || !t.judge.length) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【分管】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    // 取最上面那张 —— 和查考勤的结算顺序（后进先出）保持一致
+    const card = t.judge[t.judge.length - 1];
+    t.judge.splice(t.judge.indexOf(card), 1);
+    toDiscard([card]);
+    log(p.name + ' 发动【分管】，拆掉了 ' + t.name + ' 通知栏里的【' + card.name + '】', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* L-04 李岩 */
+  async 布施(p, targets){
+    const t = targets[0]; if (!t) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【布施】交给 ' + t.name + ' 一张手牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    removeFromHand(p, [sel.cards[0]]);
+    t.hand.push(sel.cards[0]);
+    log(p.name + ' 发动【布施】，交给 ' + t.name + ' 一张牌', 'sys');
+    await heal(t, 1, '布施', p);
+    if (window.UI) UI.render();
+  },
+  /* L-05 孩子 */
+  async 打滚(p, targets){
+    const t = targets[0]; if (!t || !t.hand.length) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【打滚】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    // 拒绝的代价必须**大于**给一张牌，否则理性的对手永远拒绝，
+    // 这个技能就退化成"弃一张摸一张"（比【摆尾】还差）。所以拒绝是摸两张。
+    const r = await Ask(t, { kind:'choice',
+      prompt:'【打滚】' + p.name + ' 向你撒泼讨一张牌，是否给他？',
+      options:[{key:'yes',label:'给一张'},{key:'no',label:'不给（对方摸两张）'}], skillBlock:true });
+    if (r.option === 'yes'){
+      const give = await Ask(t, { kind:'selectCards', prompt:'【打滚】交给 ' + p.name + ' 一张手牌', from:'self', min:1, max:1 });
+      if (give.cards && give.cards.length){
+        removeFromHand(t, [give.cards[0]]);
+        p.hand.push(give.cards[0]);
+        log(p.name + ' 发动【打滚】，' + t.name + ' 交出了一张手牌', 'sys');
+      } else {
+        await drawCards(p, 2, '打滚');   // 答应给却给不出（手牌被清空），按拒绝算
+      }
+    } else {
+      log(p.name + ' 发动【打滚】，' + t.name + ' 不给，' + p.name + ' 摸两张牌', 'sys');
+      await drawCards(p, 2, '打滚');
+    }
+    if (window.UI) UI.render();
+  },
+  /* L-06 亨利 */
+  async 钞能力(p, targets){
+    const t = targets[0]; if (!t) return;
+    const eq = D.EQUIP_SLOTS.map(k => t.equips[k]).filter(Boolean);
+    if (!eq.length) return;
+    // 弃一张（原为两张）：探针跑 500 局，亨利连续两轮都是全场最弱（0.49 / 0.54，
+    // 存活率 22% 全场垫底）。原因是他的两个技能都没有实感 —— 手牌上限 +2 在能正常
+    // 出牌时几乎用不上，而唯一有威胁的【钞能力】代价重到 AI 很少值得用。
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【钞能力】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    const removed = D.EQUIP_SLOTS.map(k => { const c = t.equips[k]; t.equips[k] = null; return c; }).filter(Boolean);
+    toDiscard(removed);
+    log(p.name + ' 发动【钞能力】，弃置了 ' + t.name + ' 装备区的 ' + removed.length + ' 张牌', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* L-07 张金雪 */
+  async 铁面(p, targets){
+    const t = targets[0]; if (!t) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【铁面】弃置两张牌', from:'self', min:2, max:2 });
+    if (!sel.cards || sel.cards.length < 2) return;
+    discardFromHand(p, sel.cards);
+    t.eventBan = true;
+    log(p.name + ' 发动【铁面】：' + t.name + ' 本回合不能使用事件牌', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* 地主身份技 —— 不属于任何角色，靠 p.extraSkills 挂上去 */
+  async 飞扬(p){
+    const r = await Ask(p, { kind:'choice',
+      prompt:'【飞扬】查考勤开始：是否弃两张牌，弃置你通知栏里的全部 ' + p.judge.length + ' 张牌？',
+      options:[{key:'yes',label:'发动（弃两张牌）'},{key:'no',label:'放弃'}], skillBlock:true });
+    if (r.option !== 'yes') return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【飞扬】弃置两张牌', from:'self', min:2, max:2 });
+    if (!sel.cards || sel.cards.length < 2) return;
+    discardFromHand(p, sel.cards);
+    const z = p.judge.splice(0);
+    toDiscard(z);
+    log(p.name + ' 发动【飞扬】，弃置了通知栏里的 ' + z.length + ' 张牌', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* P-01 馒头 */
+  async 管饱(p, targets){
+    const t = targets[0]; if (!t) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【管饱】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    log(p.name + ' 发动【管饱】，喂了 ' + t.name + ' 一口', 'sys');
+    await heal(t, 1, '管饱', p);
+    await drawCards(t, 1, '管饱');
+    if (window.UI) UI.render();
+  },
+  /* P-02 老猫 */
+  async 爪子(p, targets){
+    const t = targets[0]; if (!t || !t.hand.length) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【爪子】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    const i = Math.floor(Math.random() * t.hand.length);
+    const c = t.hand[i];
+    discardFromHand(t, [c]);
+    log(p.name + ' 发动【爪子】，挠掉了 ' + t.name + ' 一张手牌', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* P-03 老姜 */
+  async 老辣(p, targets){
+    const t = targets[0]; if (!t) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【老辣】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    if (t.chained){
+      // 已经横置了，横置没有意义 —— 改成补一刀（和超开心【起哄】拉开区别）
+      log(p.name + ' 发动【老辣】：' + t.name + ' 已横置，改为造成 1 点伤害', 'sys');
+      await damage(t, 1, p, 'normal');
+    } else {
+      t.chained = true;
+      log(p.name + ' 发动【老辣】，横置 ' + t.name, 'sys');
+      if (window.UI) UI.render();
+    }
+  },
+  /* P-04 老瓶 */
+  async 新酒(p){
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【新酒】弃置一张手牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    if (!G.discard.length){ log('弃牌堆是空的，【新酒】无事发生', 'sys'); return; }
+    const i = Math.floor(Math.random() * G.discard.length);
+    const got = G.discard.splice(i, 1)[0];
+    p.hand.push(got);
+    log(p.name + ' 发动【新酒】，从弃牌堆取回一张牌', 'sys');
+    if (window.UI) UI.render();
+  },
+  /* P-06 老石 */
+  async 硬碰硬(p, targets){
+    const t = targets[0]; if (!t) return;
+    // 弃两张：原先只要一张，而它经常能打出 2 点 —— 那是全场最高伤害/代价比，
+    // 平衡探针跑 500 局把它标成 1.65（全场最强，基础 20 人的上限是 1.57）
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【硬碰硬】弃置两张牌', from:'self', min:2, max:2 });
+    if (!sel.cards || sel.cards.length < 2) return;
+    discardFromHand(p, sel.cards);
+    const big = t.hp > p.hp;
+    log(p.name + ' 发动【硬碰硬】' + (big ? '（对方体力更高，伤害翻倍）' : ''), 'sys');
+    await damage(t, big ? 2 : 1, p, 'normal');
+  },
+  /* P-07 老虎 */
+  async 虎啸(p, targets){
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【虎啸】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    const hit = alivePlayers().filter(t => t !== p && inAttackRange(p, t));
+    hit.forEach(t => { t.dodgeBan = true; });
+    log(p.name + ' 发动【虎啸】：' + (hit.length ? hit.map(t => t.name).join('、') + ' 本回合不能使用代课' : '范围内没有人'), 'sys');
+    if (window.UI) UI.render();
+  },
+  /* P-08 黄熊 */
+  async 拍(p, targets){
+    const t = targets[0]; if (!t) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【拍】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    log(p.name + ' 发动【拍】', 'sys');
+    await damage(t, 1, p, 'normal');
+  },
+  /* P-09 西鱼 */
+  async 摆尾(p){
+    await drawCards(p, 2, '摆尾');
+    if (!p.hand.length) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【摆尾】弃置一张手牌', from:'self', min:1, max:1 });
+    if (sel.cards && sel.cards.length) discardFromHand(p, sel.cards);
+  },
+  /* R-21 */
+  async 起哄(p, targets){
+    const t = targets[0]; if (!t) return;
+    const sel = await Ask(p, { kind:'selectCards', prompt:'【起哄】弃置一张牌', from:'self', min:1, max:1 });
+    if (!sel.cards || !sel.cards.length) return;
+    discardFromHand(p, sel.cards);
+    // 直接置位而不是走 resolveChain：那个函数是**切换**，万一 skillTargets
+    // 的过滤哪天被改坏了，切换会把已经横置的敌人**解除**横置（帮倒忙）。
+    t.chained = true;
+    log(p.name + ' 发动【起哄】，横置 ' + t.name, 'sys');
+    if (window.UI) UI.render();
   }
 };
 async function viewAndDiscard(p, t){
@@ -1559,9 +2175,12 @@ async function runTurn(p){
   p.damageDealtThisTurn = 0;
   p.dodgeBan = false;
   p.pointBan = false;
+  p.eventBan = false;        // 张金雪【铁面】
+  p.bilingual = false;       // Tania【双语】
   p.hotUsed = false;
   p.shuikeUsed = false;
-  p.filterUsed = false;      // 肾小球【过滤】：每回合一次
+  // （【过滤】现在是"每轮一次"，靠 marks.filterRound 记轮号自判，这里不用重置）
+  // （【无私】【板书】这类"每回合一次"走的是 skillsUsedThisTurn，上面那行已统一清空）
 
   if (G.opts.hotseat) G.humanSeat = p.seat;
   p.skip = { draw:false, play:false, judge:false };
@@ -1584,6 +2203,9 @@ async function runTurn(p){
   /* 阶段 2：查考勤 */
   if (UI) UI.setPhase('judge');
   await sleep(260);
+  // 地主【飞扬】：必须在 judgePhase **之前** —— 它的语义是"查考勤开始时先清干净"，
+  // 放到后面就等于清了个结算完的空壳。通知栏没牌时不用问。
+  if (hasSkill(p, '飞扬') && p.judge.length) await SKILLS.飞扬(p);
   await judgePhase(p);
   if (G.over || !p.alive) return;
 
@@ -1592,7 +2214,12 @@ async function runTurn(p){
   await sleep(260);
   if (p.marks.pigeon){ p.marks.pigeon = 0; log(p.name + ' 因【鸽王】跳过摸牌阶段', 'sys'); }
   else if (p.skip.draw) log(p.name + ' 跳过摸牌阶段', 'sys');
-  else await drawCards(p, 2, '摸牌阶段');
+  else {
+    // 基础 2 张 → 各形式自己改（2V2 的 1 号位第一回合只摸 1 张）→ 再由角色技能改
+    let n = fmt().drawCount(p, 2);
+    if (hasSkill(p, '扛')) n--;   // 黄熊：换来的是体力上限 +1，见 finalizeGame
+    await drawCards(p, Math.max(0, n), '摸牌阶段');
+  }
   if (G.over || !p.alive) return;
 
   /* 阶段 4：出牌 */
@@ -1635,7 +2262,18 @@ async function runTurn(p){
   /* 阶段 6：回合结束 */
   if (UI) UI.setPhase('end');
   await sleep(240);
+  await endTurn(p);
+}
+
+/** 回合结束阶段的收尾。抽成独立函数是为了能单独测（和 judgePhase 一个道理）。 */
+async function endTurn(p){
   if (hasSkill(p, '摸鱼') && p.damageDealtThisTurn === 0) await drawCards(p, 1, '摸鱼');
+  // 老瓶【旧瓶】：这一整个回合一张牌都没用过，摸两张。
+  // usedCardsThisTurn 由 runTurn 开局清空、出牌时累加，判据比"没造成伤害"严格得多
+  if (hasSkill(p, '旧瓶') && !(p.usedCardsThisTurn || []).length){
+    log('【旧瓶】：' + p.name + ' 本回合未出牌，摸两张牌', 'sys');
+    await drawCards(p, 2, '旧瓶');
+  }
   p.marks.buff = 0;
   p.marks.pigeon = 0;
   p.marks.slideTurn = -1;
@@ -1743,6 +2381,8 @@ function playableList(p){
     if (seen.has(c.name)) continue;
     const meta = CARDS[c.name];
     if (meta.kind === 'dodge' || meta.kind === 'nullify') continue;
+    // 张金雪【铁面】：本回合不能使用事件牌。延时事件牌是事件牌的子类，一并封掉
+    if (p.eventBan && (c.type === 'event' || c.type === 'delayed')) continue;
     if (c.type === 'equip'){
       list.push({ card:c, count: hand.filter(x => x.name === c.name).length });
       seen.add(c.name);
@@ -1759,16 +2399,20 @@ function playableList(p){
   }
   return list;
 }
+/* 点名类牌的每回合次数上限。默认 1；地主【跋扈】+1。
+ * 注意这两个函数是**同一段判据的两份拷贝**，改一个必须改另一个 ——
+ * 只改一个的症状是"装备点名册时正常、其它武器出第二张杀被拒"，随装备变化，极难排查。 */
+function attackQuota(p){ return 1 + (hasSkill(p, '跋扈') ? 1 : 0); }
 function canUseAttack(p, card){
   // 点名类牌（上课点名/公开处刑/雷同警告）共用同一个次数上限，
   // 「点名册」和【吹牛】的禁令也都作用于整个类别 —— 规则书 5.1.1
   if (p.pointBan) return false;
   if (p.equips.weapon && p.equips.weapon.name === '点名册') return true;
-  return p.usedAttackCardThisPhase === 0;
+  return p.usedAttackCardThisPhase < attackQuota(p);
 }
 function canUsePointCard(p){
   if (p.equips.weapon && p.equips.weapon.name === '点名册') return true;
-  return p.usedAttackCardThisPhase === 0;
+  return p.usedAttackCardThisPhase < attackQuota(p);
 }
 function usableSkills(p){
   const out = [];
@@ -1799,6 +2443,21 @@ function usableSkills(p){
   if (has('撒娇')) add('撒娇', true);
   if (has('治愈')) add('治愈', true, { needCards:1, includeSelf:true, healOnly:true });
   if (has('鸽王')) add('鸽王', true, { needCards:1 });
+  if (has('起哄')) add('起哄', true, { needCards:1 });
+  if (has('双语')) add('双语', false, { needCards:1 });   // 只需要弃牌，不用选人
+  if (has('分管')) add('分管', true, { needCards:1 });
+  if (has('布施')) add('布施', true, { needCards:1, healOnly:true });
+  if (has('打滚')) add('打滚', true, { needCards:1 });
+  if (has('钞能力')) add('钞能力', true, { needCards:1 });
+  if (has('铁面')) add('铁面', true, { needCards:2 });
+  if (has('管饱')) add('管饱', true, { needCards:1, healOnly:true });
+  if (has('爪子')) add('爪子', true, { needCards:1 });
+  if (has('老辣')) add('老辣', true, { needCards:1 });
+  if (has('新酒')) add('新酒', false, { needCards:1 });   // 只弃自己的牌，不用选人
+  if (has('硬碰硬')) add('硬碰硬', true, { needCards:2 });
+  if (has('虎啸')) add('虎啸', false, { needCards:1 });   // 目标是"范围内所有人"，自动算
+  if (has('拍')) add('拍', true, { needCards:1 });
+  if (has('摆尾')) add('摆尾', false);
   // 武器转化技（电风扇 / 粉笔）—— 同样受"点名类牌每回合 1 张"的限制
   if (p.equips.weapon && p.equips.weapon.name === '电风扇'
       && p.hand.some(c => c.name === '上课点名') && canUseAttack(p, { name:'公开处刑' }))
@@ -1809,8 +2468,16 @@ function usableSkills(p){
   return out;
 }
 function skillDesc(p, name){
-  const s = p.char.skills.find(x => x.name === name);
-  return s ? s.text : '';
+  const s = p.char && p.char.skills.find(x => x.name === name);
+  // 过一遍 md()：技能文案里允许写 **粗体**，不过就会显示成字面星号
+  if (s) return D.md ? D.md(s.text) : s.text;
+  return (SIDE_SKILLS[name] && SIDE_SKILLS[name].text) || '';   // 身份技（地主专属）
+}
+/** 角色技 + 身份技的合并列表 —— 面板与详情弹窗都用它，否则玩家看不到地主技说明 */
+function skillList(p){
+  const out = (p.char && p.char.skills ? p.char.skills.slice() : []);
+  (p.extraSkills || []).forEach(n => { if (SIDE_SKILLS[n]) out.push(SIDE_SKILLS[n]); });
+  return out;
 }
 function skillTargets(p, skill){
   const out = [];
@@ -1829,6 +2496,15 @@ function skillTargets(p, skill){
       out.push(t);
     } else if (skill.name === '侃山'){ if (t.hand.length && p.hand.length) out.push(t); }
     else if (skill.name === '鸽王'){ out.push(t); }
+    // 起哄只能指定**未横置**的：已经横置的人再横置一次是纯浪费一张牌
+    else if (skill.name === '起哄'){ if (!t.chained) out.push(t); }
+    else if (skill.name === '分管'){ if (t.judge && t.judge.length) out.push(t); }
+    else if (skill.name === '钞能力'){ if (D.EQUIP_SLOTS.some(k => t.equips[k])) out.push(t); }
+    else if (skill.name === '打滚'){ if (t.hand.length) out.push(t); }
+    else if (skill.name === '爪子'){ if (t.hand.length) out.push(t); }
+    // 注意：像【虎啸】这种"目标由技能自己算"的技能，**不能**在这里返回空数组。
+    // 界面按钮的禁用条件是 `候选数 === 0`（ui.js），返回空会让它永远点不动；
+    // "不用选人"是靠 usableSkills 里的 needTarget:false 表达的（ui.js 见到它直接结算）。
     else if (skill.name === '冲锋'){ if (inAttackRange(p, t)) out.push(t); }
     else out.push(t);
   }
@@ -1906,8 +2582,18 @@ async function playPhase(p){
  * ========================================================= */
 function initGame(opts){
   G.opts = opts || {};
+  G.format = G.opts.format || 'identity';     // 对局形式，见文件顶部的 FORMAT 表
+  // 保护轮只对身份局有意义：它把第一圈的伤害钳到 hp-1，而 3~4 人局本来轮次就少，
+  // 白白多拖一圈、直接顶掉新玩法"一局 5 分钟"的目标
+  G.opts.protect = !!G.opts.protect && G.format === 'identity';
+  // 「快速动画」以前是个**死开关**：页面上点得动，但没有任何地方读它。
+  // sleep() 是按 G.speed 放大的，所以这里改它就够了，不用动每个停顿点。
+  G.speed = opts.fast ? 0.6 : 1.35;
   G.gen = (G.gen || 0) + 1;
   G.players = []; G.deck = []; G.discard = []; G.over = false; G.round = 1; G.turnId = 0;
+  // 开局前两段交互的状态：上一局的残留必须清掉，否则新的一局会直接跳过叫分/禁选
+  G.bid = null; G.bidDone = false; G.bidScore = 0;
+  G.ban = null; G.banDone = false; G.bannedIds = [];
   G.log = []; G.firstRound = true; G.roundDone = new Set(); G.harmLog = []; G.turnSeat = 0;
   // 谁救过院长（公开信息，AI 靠它推断"这人更像教务"）
   // 以前 AI 读的是 p._memo.rescue，但 _memo 全项目只读不写，那个判断从来没生效过。
@@ -1916,7 +2602,11 @@ function initGame(opts){
   G.stats = {};
   G.killLog = [];
   const n = opts.count;
-  const total = D.CHARACTERS.length;
+  // 本局的武将名单 = 基础角色 + 房主启用的拓展包。
+  // 不启用任何包时，G.roster 与旧的 D.CHARACTERS 逐字相同 —— 老对局不受影响。
+  G.packs = opts.packs || {};
+  G.roster = D.roster(G.packs);
+  const total = G.roster.length;
   // 哪些座位是真人在操作。单机/热座时就是 [0]。
   const humanSeats = (opts.humanSeats && opts.humanSeats.length)
     ? opts.humanSeats.slice().sort((a, b) => a - b)
@@ -1927,21 +2617,25 @@ function initGame(opts){
   // humanCount === 1 时，下面的式子等价于原来的 total - (n - 1)，单机行为完全不变。
   const dealCap = Math.floor((total - (n - humanCount)) / humanCount);
   const deal = Math.max(2, Math.min(opts.deal || 3, dealCap));
-  const cfg = D.IDENTITY_CONFIG[n] || D.IDENTITY_CONFIG[5];
+  // 只有身份局才碰 IDENTITY_CONFIG —— 斗地主 3 人在这张表里根本没有档位，
+  // 硬补一档会把 p.identity 填上值，于是击杀奖惩/投影隐藏/AI 推断又全部按
+  // 身份局语义跑起来，等于把两套模型搅在一起。
+  const cfg = (G.format === 'identity') ? fmt().identityConfig(n) : null;
   // 身份模式（规则书 9.1）：
   //   A 随机身份 —— 洗混后每人一张（默认）
   //   B 自选阵营 —— 身份池公开，按座位顺序轮流挑，挑完只有本人知道（院长公开）
   //   C 半随机   —— 先选角色、后揭晓身份（选角界面不显示身份）
-  G.mode = opts.mode || 'A';
+  // 非身份局没有"身份模式"这回事：G.mode 必须清空，否则身份轮抽会对空池子死循环
+  G.mode = (G.format === 'identity') ? (opts.mode || 'A') : null;
   const drafting = (G.mode === 'B');
   // 身份池
   const idPool = [];
-  for (const k of Object.keys(cfg)) for (let i=0;i<cfg[k];i++) idPool.push(k);
+  if (cfg) for (const k of Object.keys(cfg)) for (let i=0;i<cfg[k];i++) idPool.push(k);
   shuffle(idPool);
   // B 模式下不预先分配，留一个公开的池子等人来挑
   G.idPool = drafting ? idPool.slice() : [];
   // 角色发放：每个真人各拿一批互不重叠的候选
-  const charPool = shuffle(D.CHARACTERS.slice());
+  const charPool = shuffle(G.roster.slice());
   const choicesBySeat = {};
   for (const s of humanSeats){
     choicesBySeat[s] = charPool.splice(0, Math.min(deal, charPool.length));
@@ -1952,13 +2646,16 @@ function initGame(opts){
     const choices = choicesBySeat[i] || [];
     const player = {
       seat:i, char:null, charChoices:choices,
-      identity: drafting ? null : idPool[i],
+      // 非身份局 identity 恒为 null —— 阵营走 p.side（见各形式的 setup）
+      identity: (drafting || !cfg) ? null : (idPool[i] || null),
+      side: null,
       hp:0, maxHp:0, alive:true, hand:[],
       equips:{ weapon:null, armor:null, mountUp:null, mountDown:null },
       judge:[], chained:false, marks:{}, isHuman: (humanSeats.indexOf(i) >= 0),
-      revealed: !drafting && idPool[i] === 'dean',
+      revealed: !drafting && !!cfg && idPool[i] === 'dean',
       skillsUsedThisTurn:{}, usedCardsThisTurn:[],
-      damageDealtThisTurn:0, usedAttackCardThisPhase:0, skip:{}, dodgeBan:false, pointBan:false
+      damageDealtThisTurn:0, usedAttackCardThisPhase:0,
+      skip:{}, dodgeBan:false, pointBan:false, eventBan:false, bilingual:false
     };
     // 角色名以 getter 形式提供：p.name = 角色牌上的名字
     Object.defineProperty(player, 'name', {
@@ -1969,6 +2666,8 @@ function initGame(opts){
   }
   G.humanSeat = humanSeats[0];
   G.humanSeats = humanSeats;         // 联机时用来知道哪些座位要发选角请求
+  // 各形式自己的开局编排（身份局不需要 —— 它上面已经按 IDENTITY_CONFIG 分好了）
+  if (fmt().setup) fmt().setup();
   window.G = G;
 }
 /* ---------------- 选角 ----------------
@@ -1977,11 +2676,14 @@ function initGame(opts){
 
 /** 电脑从剩余武将池里挑一个（评分 + 一点随机） */
 function aiPickChar(p, taken, pool){
-  const src = (pool && pool.length) ? pool : D.CHARACTERS;
+  // 兜底一律回落到**本局名单**（G.roster），不是基础名单 ——
+  // 否则开了拓展包的局在补位时会挑到一个本局根本没发出去的角色
+  const fallback = (G.roster && G.roster.length) ? G.roster : D.CHARACTERS;
+  const src = (pool && pool.length) ? pool : fallback;
   let list = src.filter(c => !taken || !taken.has(c.id));
-  if (!list.length) list = D.CHARACTERS.filter(c => !taken || !taken.has(c.id));
-  if (!list.length) list = D.CHARACTERS.slice();
-  if (!list.length) return D.CHARACTERS[0];
+  if (!list.length) list = fallback.filter(c => !taken || !taken.has(c.id));
+  if (!list.length) list = fallback.slice();
+  if (!list.length) return fallback[0];
   let best = list[0], bestScore = -1;
   for (const c of list){
     let s = c.hp * 12 + Math.random() * 22;
@@ -2087,7 +2789,8 @@ function finalizeRoles(){
     const used = new Set();
     G.players.forEach(p => {
       if (!p.char || used.has(p.char.id)){
-        const alt = D.CHARACTERS.find(x => !used.has(x.id));
+        const alt = ((G.roster && G.roster.length) ? G.roster : D.CHARACTERS)
+                      .find(x => !used.has(x.id));
         if (alt) p.char = alt;
       }
       used.add(p.char.id);
@@ -2099,9 +2802,7 @@ function finalizeRoles(){
 /** 发起手牌（院长 5 张；4 人局学生补偿到 5 张，见规则书 9.5） */
 function dealInitialHands(){
   for (const p of G.players){
-    let n = 4;
-    if (p.identity === 'dean') n = 5;
-    if (G.players.length === 4 && p.identity === 'student') n = 5;
+    const n = fmt().handSize(p);      // 按对局形式决定起手张数
     for (let i=0;i<n;i++){
       const c = G.deck.pop();
       if (c) p.hand.push(c);
@@ -2113,13 +2814,14 @@ function finalizeGame(){
   const G2 = G;
   G2.deck = shuffle(D.buildDeck());
   G2.discard = [];
-  // 院长先手
-  const dean = G2.players.find(p => p.identity === 'dean');
-  G2.turnSeat = dean.seat;
-  // 体力与起手
+  G2.turnSeat = fmt().firstSeat();    // 身份局是院长先手；团队形式各自定
   for (const p of G2.players){
-    p.maxHp = p.char.hp + (p.identity === 'dean' ? 1 : 0);
+    // 身份加成 + 黄熊【扛】的体力上限 +1（代价是摸牌阶段少摸一张，见 runTurn）
+    p.maxHp = p.char.hp + fmt().hpBonus(p) + (hasSkill(p, '扛') ? 1 : 0);
     p.hp = p.maxHp;
+    // 地主的两个身份技走 p.extraSkills（见 hasSkill 的第二条支路）。
+    // 放在这里而不是 initGame：叫分是在那之后才定下地主的。
+    if (p.side === 'landlord') p.extraSkills = ['飞扬', '跋扈'];
   }
 }
 async function gameLoop(){
@@ -2179,6 +2881,24 @@ window.Engine = {
   // 赛后评分（供自测与扩展使用）
   buildScoreboard, SCORE_RULE,
   // 供自检与扩展使用
-  isImmuneByCard, canUseAttack, allZoneCards, countPayable, judgePhase
+  isImmuneByCard, canUseAttack, allZoneCards, countPayable, judgePhase, endTurn,
+  // 开局前的两段交互（主客机共用）：斗地主的叫分、2V2 的禁选
+  bidNext, bidSubmit, bidFinish, skillList,
+  banNext, banSubmit, banFinish,
+  // 对局形式的对外接口 —— ui / net / main / ai 只能通过这些拿信息，不许直接读 G.format
+  winOf: (winner, p) => fmt().winOf(winner, p),
+  sideLabel: k => fmt().sideName(k),
+  sideInfo: p => {
+    const k = fmt().sideOf(p);
+    return { key:k, name: fmt().sideName(k), cls: fmt().sideCls(k),
+             tagCls: fmt().sideTagCls(p),
+             goal: fmt().goal(k), visible: fmt().visible(p) };
+  },
+  formatLabel: () => fmt().label,
+  /** 可选玩法列表（开始界面与联机大厅都从它生成，别在别处硬编码一份） */
+  formats: () => Object.keys(FORMAT).map(k => ({
+    key: FORMAT[k].key, label: FORMAT[k].label, seats: FORMAT[k].seats
+  })),
+  _skills: SKILLS          // 主动技函数表：测试要能单独驱动一个技能，不看渲染
 };
 })();

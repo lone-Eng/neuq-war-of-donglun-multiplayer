@@ -58,9 +58,37 @@ function J(){ return Math.random() * lv().noise; }
 /* ---------------- 简易身份推断 ---------------- */
 function aliveCount(id){ return G.players.filter(p => p.alive && p.identity === id).length; }
 
+/**
+ * 当前是不是"无身份、按阵营分敌我"的形式（2V2 / 斗地主）。
+ * 对 G.format 未定义的旧快照/测试要安全 —— 那时按身份局走。
+ */
+function isTeamFormat(){
+  return !!(window.G && G.format && G.format !== 'identity');
+}
+/**
+ * 无身份局的仇恨度：**纯查表**，没有"推断"这回事 ——
+ * 2V2 的阵营由座位号直接决定，斗地主的地主一叫完分就公开。
+ * 所有决策（选目标 / 出牌评分 / AOE 判断 / 濒死救援）都经由 threat()，
+ * 所以这一处分对了，其余地方自动跟着对。
+ */
+function sideThreat(ai, t){
+  if (!ai.side || !t.side) return 0;          // 阵营还没分完（叫分/禁选阶段）
+  if (window.G.format === 'landlord'){
+    return (ai.side === 'landlord')
+      ? (t.side === 'landlord' ? -100 : 100)
+      : (t.side === 'landlord' ? 100 : -100);
+  }
+  return (t.side === ai.side) ? -100 : 100;   // 2V2：同队不打，异队全力
+}
+/** 两个角色是不是一伙的（濒死救援用；身份局比身份，团队形式比阵营） */
+function sameSide(a, b){
+  return isTeamFormat() ? (!!a.side && a.side === b.side) : (a.identity === b.identity);
+}
+
 /** 仇恨度：越高越想打他（-100 = 绝对不打） */
 function threatRaw(ai, t){
   if (t === ai || !t.alive) return -100;
+  if (isTeamFormat()) return sideThreat(ai, t);   // ← 无身份局在这里分流
   const me = ai.identity, him = t.identity;
   const known = t.revealed || him === 'dean';   // 死亡揭示 / 院长公开
   const harm = (G.harmLog || []).filter(h => h.s === t.seat);
@@ -112,6 +140,8 @@ function threatRaw(ai, t){
  */
 function threat(ai, t){
   const raw = threatRaw(ai, t);
+  // 无身份局的阵营是确定的，不该有"简单档看得不准"这种档位 —— 直接原样返回
+  if (isTeamFormat()) return raw;
   const w = lv().inference;
   if (w === 1 || raw <= -60) return raw;
   return Math.round(raw * w);
@@ -142,6 +172,8 @@ function scoreCard(ai, card, targets){
       if (card.name === '公开处刑' && t && t.chained) s += 25;
       if (card.name === '雷同警告' && t && t.chained) s += 20;
       if (t && t.hp <= 1) s += 22;
+      // 多目标（【双语】/黑板擦）：一次点名打两个人，比单目标值钱得多
+      if ((targets || []).length > 1) s += 28;
       return s;
     }
     case 'heal':      return ai.hp < ai.maxHp ? (ai.hp <= 1 ? 140 : 86) : -1;
@@ -214,6 +246,47 @@ function scoreSkill(ai, skill, targets){
     case '撒娇':  return t && t.hand.length ? 40 : -1;
     case '治愈':  return (ai.hp < ai.maxHp - 1 || wounded) ? 70 : -1;
     case '鸽王':  return 52 + th * 0.2;
+    // ---- 牢师包 ----
+    // 目标已经由 skillTargets 过滤过（分管=通知栏有牌、钞能力=装备区有牌、打滚=对方有手牌）
+    case '双语': {
+      // 弃一张换"这次点名打两个人"。只有还没用掉本回合点名次数、
+      // 且攻击范围内确实有第二个敌对目标时才划算
+      const foes = G.players.filter(p =>
+        p.alive && p !== ai && threat(ai, p) > 45 && window.Engine.inAttackRange(ai, p));
+      return (foes.length >= 2 && !ai.usedAttackCardThisPhase) ? 74 : 22;
+    }
+    case '分管':   return 62 + th * 0.15;
+    case '布施':   return wounded ? 64 : -1;
+    case '打滚':   return 58 + th * 0.15;
+    case '钞能力': return 80 + th * 0.15;
+    case '铁面':   return 58 + th * 0.2;
+    // ---- 第一包 ----
+    case '管饱':   return wounded ? 62 : -1;
+    case '爪子':   return 56 + th * 0.15;
+    case '老辣': {
+      if (t && t.chained) return 82 + th * 0.2;    // 已横置 = 直接 1 点伤害，稳赚
+      // 没横置时是"投资"：只有手里攥着属性伤害牌才值得（和【起哄】同一个判据）
+      const hasElem = ai.hand.some(c => {
+        const m = CARDS[c.name];
+        return m && (m.dmg === 'fire' || m.dmg === 'thunder');
+      });
+      return hasElem ? 70 + th * 0.15 : 22;
+    }
+    case '新酒':   return ai.hand.length >= 3 ? 44 : -1;   // 手牌少时别把仅有的牌换掉
+    case '硬碰硬': return 72 + th * 0.2;
+    case '虎啸':   return 60 + th * 0.15;
+    case '拍':     return 74 + th * 0.2;
+    case '摆尾':   return 80;                              // 净赚一张牌，没有理由不用
+    case '起哄': {
+      // 横置本身不造成任何伤害，是"投资"—— 只有手里真攥着属性伤害牌
+      // （公开处刑 / 雷同警告 / 当面约谈）才值得弃一张去做。
+      // 没有兑现手段时给 22（低于 34 的出手阈值，等于不用），别白扔一张牌。
+      const hasElem = ai.hand.some(c => {
+        const m = CARDS[c.name];
+        return m && (m.dmg === 'fire' || m.dmg === 'thunder');
+      });
+      return hasElem ? 70 + th * 0.15 : 22;
+    }
   }
   return 20;
 }
@@ -262,9 +335,16 @@ function decidePlay(me, req){
     } else if (meta.kind === 'heal' || meta.kind === 'buff'){
       chosen = [me];
     } else {
-      const best = pickBestTarget(me, targets.filter(t => threat(me, t) > -20));
+      const pool = targets.filter(t => threat(me, t) > -20);
+      const best = pickBestTarget(me, pool);
       if (!best) continue;
       chosen = [best];
+      // Tania【双语】：多打一个。第二个目标要挑**明确敌对**的（threat > 45），
+      // 否则会顺手打到身份不明的人、白白树敌
+      if (me.bilingual && D.ATTACK_CARDS.includes(card.name) && pool.length > 1){
+        const second = pickBestTarget(me, pool.filter(t => t !== best && threat(me, t) > 45));
+        if (second) chosen.push(second);
+      }
     }
     const lenBonus = card.type === 'delayed' ? -8 : 0;
     acts.push({ action:{ type:'card', card, targets: chosen }, score: scoreCard(me, card, chosen) + lenBonus + J() });
@@ -347,13 +427,15 @@ function decideChoice(me, req){
       const dying = parseDyingTarget(prompt);
       const keep = me.hp <= 1 ? 1 : 0;   // 自己血少时留牌自保
       if (dying && isFriend(me, dying) && healCount > keep) return { option:'card' };
-      if (dying && dying.identity === me.identity && healCount > 1) return { option:'card' };
+      // 同阵营必救。这里原来写的是 dying.identity === me.identity ——
+      // 团队形式下双方都是 null，会"碰巧"成立但语义是错的（斗地主里两个农民也会被误判）
+      if (dying && sameSide(me, dying) && healCount > 1) return { option:'card' };
       return { option:'no' };
     }
     if (opts.includes('skill1')){
       if (isSelfPrompt) return { option: me.hand.length > 1 ? 'skill1' : 'no' };
       const dying = parseDyingTarget(prompt);
-      if (dying && (isFriend(me, dying) || dying.identity === me.identity) && me.hand.length > 2) return { option:'skill1' };
+      if (dying && (isFriend(me, dying) || sameSide(me, dying)) && me.hand.length > 2) return { option:'skill1' };
       return { option:'no' };
     }
     return { option:'no' };
@@ -403,6 +485,15 @@ function decideChoice(me, req){
         || txt.includes('监控摄像头') || txt.includes('激光笔')){
       return { option:'yes' };
     }
+    if (txt.includes('飞扬')){
+      // 弃两张换掉通知栏。只清一张是亏牌的交易，通知栏里堆了两张以上才值得
+      return { option: (me.judge && me.judge.length >= 2) ? 'yes' : 'no' };
+    }
+    if (txt.includes('打滚')){
+      // 给一张（亏 1）vs 让对方摸两张（对方赚 2）：给更划算，所以基本都给。
+      // 手上只剩一张时不给 —— 那张可能是唯一能救命/能反打的牌
+      return { option: me.hand.length >= 2 ? 'yes' : 'no' };
+    }
     if (label.includes('课堂辩论')) return { option: me.hand.filter(c=>c.name==='上课点名').length >= 2 ? 'yes' : 'no' };
     if (label.includes('随堂测验')) return { option: me.hand.some(c=>c.name==='上课点名') ? 'yes' : 'no' };
     if (label.includes('点名接力')){
@@ -429,11 +520,23 @@ function decideChoice(me, req){
   if (opts.includes('yes') && opts.includes('no')) return { option:'yes' };
   return { option: opts[0] };
 }
+/**
+ * 从中文提示语里抠出"被指向的那个人"。
+ *
+ * **不要用中文正则去抠名字。** 角色名可能是英文（牢师包的 Tania / Hogo），
+ * 而 `[一-龥]{2,4}` 在 `'【兄弟】Tania 即将受到 2 点伤害'` 上会匹配到
+ * **技能名"兄弟"**并成功返回 —— 调用方 find 不到人就静默降级
+ * （【兄弟】【人脉】【设局】三个技能一起变成"永远不发动"），不报任何错。
+ *
+ * 改成拿**场上的真名**去比对：名字是已知的，直接比字符串最稳。
+ */
 function parseTargetName(prompt){
-  const m = prompt.match(/^(?:【[^】]+】)?\s*([一-龥]{2,4})\s*(?:刚刚|即将|即将受到|对你|使用了|打出|指定)/);
-  if (m) return m[1];
-  const m2 = prompt.match(/([一-龥]{2,4})/);
-  return m2 ? m2[1] : '';
+  const body = String(prompt || '').replace(/^【[^】]*】\s*/, '');   // 去掉开头的【技能名】
+  // 长名字优先，避免短名字先命中（例如场上有"老石"和"老石匠"时）
+  const names = G.players.map(p => p.name).filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const n of names) if (body.indexOf(n) === 0) return n;
+  for (const n of names) if (String(prompt).indexOf(n) >= 0) return n;
+  return '';
 }
 function parseDyingTarget(prompt){
   const m = prompt.match(/([一-龥]{2,4})\s*(?:仍在濒死|处于濒死|进入濒死|是否救援|的体力)/);

@@ -530,15 +530,28 @@ def lan_ips():
 
 def main():
     port = 8080
+    from_env = False
+    # 云平台（Render / Railway / Fly / 各种容器）用 PORT 环境变量指定端口。
+    # 命令行参数优先，方便本地临时换端口。
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])
         except ValueError:
             print('端口必须是数字，比如：python server.py 9000')
             return 1
+    elif os.environ.get('PORT'):
+        try:
+            port = int(os.environ['PORT'])
+            from_env = True
+        except ValueError:
+            print('环境变量 PORT 不是数字：%r' % os.environ['PORT'])
+            return 1
 
     httpd = None
-    for p in range(port, port + 20):
+    # 本地跑：端口被占就顺延（方便，反正地址会打印出来）
+    # 云平台：**绝不能顺延** —— 平台把流量打到它指定的那个端口，
+    #        顺延等于"进程起来了但谁也连不上"，反而不如直接报错退出
+    for p in range(port, port + (1 if from_env else 20)):
         try:
             httpd = ThreadingHTTPServer(('0.0.0.0', p), Handler)
             port = p
@@ -546,7 +559,10 @@ def main():
         except OSError:
             continue
     if httpd is None:
-        print('端口 %d 起连续 20 个都被占用了，换个起始端口吧。' % port)
+        if from_env:
+            print('端口 %d 被占用 —— 云平台指定的端口不能顺延，检查是不是重复启动了。' % port)
+        else:
+            print('端口 %d 起连续 20 个都被占用了，换个起始端口吧。' % port)
         return 1
 
     httpd.daemon_threads = True

@@ -102,6 +102,11 @@ function show(screen){
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById('screen-' + screen);
   if (el) el.classList.add('active');
+  // BGM 只在**对局外**放：开始界面 / 大厅 / 选角 / 结算。
+  // 进了牌局就停 —— 对局里音效很密（出牌、伤害、判定），BGM 会互相盖。
+  if (window.FX && FX.bgm){
+    if (screen === 'game') FX.bgm.pause(); else FX.bgm.play();
+  }
 }
 UI.show = show;
 
@@ -317,20 +322,28 @@ function renderTopbar(){
     banner.innerHTML = '<span style="color:#8fa0b5">你正在旁观本局</span>';
     return;
   }
-  const id = D.IDENTITIES[me.identity];
+  // 走形式表，不直接认 D.IDENTITIES —— 团队玩法下 me.identity 是 null，
+  // 而它的阵营（'A' / 'landlord'）不在身份表里
+  const side = E.sideInfo(me);
+  const id = D.IDENTITIES[side.key];
+  const roleSpan = '　<span style="color:#8fa0b5">角色：' + (me.char ? me.char.name : '—') + '</span>';
   if (id){
-    banner.innerHTML = '你的身份：<b class="bid ' + id.cls + '">' + id.name + '</b>' +
-      '　<span style="color:#8fa0b5">角色：' + (me.char ? me.char.name : '—') + '</span>' +
+    banner.innerHTML = '你的身份：<b class="bid ' + id.cls + '">' + id.name + '</b>' + roleSpan +
       '　<span style="color:#7e8ea3;font-size:12px">目标：' + id.win + '</span>';
+  } else if (side.key){
+    banner.innerHTML = '你的阵营：<b class="bid ' + side.cls + '">' + side.name + '</b>' + roleSpan +
+      '　<span style="color:#7e8ea3;font-size:12px">目标：' + side.goal + '</span>';
   } else if (me.char){
     banner.innerHTML = '角色：' + me.char.name;
   }
 }
 
 function identityTag(p, isMe){
-  const id = D.IDENTITIES[p.identity];
-  if (isMe) return '<span class="pp-id ' + (p.identity === 'dean' ? 'dean' : 'revealed-' + p.identity) + '">' + id.name + '（你）</span>';
-  if (p.revealed || p.identity === 'dean') return '<span class="pp-id ' + (p.identity==='dean'?'dean':'revealed-' + p.identity) + '">' + id.name + '</span>';
+  // 走 E.sideInfo —— 直接 D.IDENTITIES[p.identity] 在团队形式下会崩
+  // （p.identity 是 null，而 isMe 这一支不查 visible 就直接解引用）
+  const side = E.sideInfo(p);
+  if (isMe) return '<span class="pp-id ' + side.tagCls + '">' + side.name + '（你）</span>';
+  if (side.visible) return '<span class="pp-id ' + side.tagCls + '">' + side.name + '</span>';
   return '<span class="pp-id hidden">身份未知</span>';
 }
 
@@ -361,8 +374,12 @@ function panelEl(p, isMe){
   if (p.pointBan) marks.push('<span class="pp-tag warn">禁点名</span>');
   const dmgBonus = p.char && E.hasSkill(p,'体能') ? '<span class="pp-tag">手牌上限+1</span>' : '';
 
-  const known = p.revealed || p.identity === 'dean' || isMe;
-  const avatarCls = known ? D.IDENTITIES[p.identity].cls : '';
+  // 走 E.sideInfo：原来这里在 isMe 时会直接解引用 D.IDENTITIES[p.identity]，
+  // 团队形式下 p.identity 是 null —— 而 isMe 这一支**必然**走到，所以是必崩
+  const side = E.sideInfo(p);
+  // 注意 `|| isMe`：原判据是 `p.revealed || identity==='dean' || isMe`，
+  // 自己的头像永远带身份样式。漏掉它我自己的面板会变灰
+  const avatarCls = (side.visible || isMe) ? side.cls : '';
   // 距离信息（相对人类玩家，直观体现"围圈坐"）
   let distTags = '';
   const me = G.players[G.humanSeat];
@@ -730,7 +747,11 @@ function onHandCardClick(card){
   const cands = E.validTargets(me, card).filter(t => canTargetOther(me, t, card));
   if (!cands.length){ UI.toast('没有合法目标', 'warn'); return; }
   const isHei = (card.name === '上课点名' && me.equips.weapon && me.equips.weapon.name === '黑板擦' && me.hand.length === 1);
-  const maxT = isHei ? 3 : (kind === 'chain' ? 2 : 1);
+  let maxT = isHei ? 3 : (kind === 'chain' ? 2 : 1);
+  // Tania【双语】：本回合下一张点名类牌可以多打一个攻击范围内的角色。
+  // 引擎侧的 resolveAttack 本来就是循环多目标的（黑板擦早就用上了），
+  // 所以这里只要把上限放开就行，不用动结算。
+  if (me.bilingual && D.ATTACK_CARDS.includes(card.name)) maxT = Math.max(maxT, 2);
   const fire = tg => finishPlay({ type:'card', card, targets: tg });
   beginTargeting({
     cands, min:1, max:maxT,
@@ -989,7 +1010,7 @@ UI.showOver = function(winner, reason, humanWin, board){
   const rec = (mySeat >= 0) ? recordResult(humanWin, board) : readRecord();
 
   let html = '<div class="ov-line">' +
-    (winner ? D.IDENTITIES[winner].name + '阵营胜利' : '平局') +
+    (winner ? E.sideLabel(winner) + '阵营胜利' : '平局') +
     '　<span style="color:#8fa0b5">（' + reason + '）</span></div>';
 
   /* ---- MVP ---- */
@@ -1008,11 +1029,13 @@ UI.showOver = function(winner, reason, humanWin, board){
   if (board && board.rows){
     html += '<div class="ov-sec">评分</div>' +
       '<table class="score-table"><thead><tr>' +
-      '<th>座位</th><th>角色</th><th>身份</th><th>结果</th>' +
+      '<th>座位</th><th>角色</th><th>阵营</th><th>结果</th>' +
       '<th>伤害</th><th>击杀</th><th>救援</th><th>治疗</th><th>技能</th><th>总分</th>' +
       '</tr></thead><tbody>';
     board.rows.forEach(r => {
-      const id = D.IDENTITIES[r.identity] || { name:'?', cls:'' };
+      // 阵营名列直接用引擎算好的名字（身份局是"院长/教务…"，团队玩法是"红队/地主…"）——
+      // 不要再自己查 D.IDENTITIES：团队玩法下 r.identity 是 null，会显示成 "?"
+      const id = { name: r.sideName || '—', cls: r.sideCls || '' };
       const cls = [];
       if (r.seat === board.mvpSeat) cls.push('mvp');
       if (r.seat === mySeat) cls.push('me');
@@ -1034,17 +1057,17 @@ UI.showOver = function(winner, reason, humanWin, board){
       '治疗他人 每点 +4　发动技能 每次 +2（上限 20）　存活到终局 +8</p>';
   }
 
-  /* ---- 身份揭示 ---- */
-  html += '<div class="ov-sec">身份揭示</div>';
+  /* ---- 阵营揭示 ---- */
+  // 走 E.sideInfo / E.winOf，不直接认识 D.IDENTITIES ——
+  // 团队形式下没有身份，直接解引用会崩（这一处原来还是第 3 份阵营映射的副本）
+  html += '<div class="ov-sec">' + E.formatLabel() + '　阵营揭示</div>';
   G.players.forEach(p => {
-    const id = D.IDENTITIES[p.identity];
+    const side = E.sideInfo(p);
     const me = p.seat === mySeat;
-    const win = (winner === 'dean' && (p.identity === 'dean' || p.identity === 'staff')) ||
-                (winner === 'student' && p.identity === 'student') ||
-                (winner === 'mole' && p.identity === 'mole');
+    const win = !!(winner && E.winOf(winner, p));
     html += '<div class="ov-line' + (win ? ' ov-win' : '') + '">' +
       (p.seat + 1) + ' 号位　' + p.char.name + '（' + p.char.title + '）　' +
-      '<b>' + id.name + '</b>　' + (p.alive ? '存活' : '死亡') + (me ? '　← 你' : '') + (win ? '　✔ 胜利' : '') + '</div>';
+      '<b>' + side.name + '</b>　' + (p.alive ? '存活' : '死亡') + (me ? '　← 你' : '') + (win ? '　✔ 胜利' : '') + '</div>';
   });
 
   /* ---- 本机战绩 ---- */

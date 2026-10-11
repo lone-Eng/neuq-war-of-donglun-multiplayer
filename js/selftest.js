@@ -92,8 +92,9 @@ function runSelfTest(){
       ok('当前对局角色不重复（' + livePlayers.length + ' 人）',
          new Set(ids).size === ids.length, ids.join('、'));
     }
-    ok('角色库 id 唯一（20 个）',
-       new Set(D.CHARACTERS.map(c => c.id)).size === D.CHARACTERS.length);
+    const allIds = D.allCharacters().map(c => c.id);
+    ok('角色库 id 唯一（含拓展包，共 ' + allIds.length + ' 名）',
+       new Set(allIds).size === allIds.length);
 
     /* ---------- 4. 数据完整性 ---------- */
     const missing = Object.keys(D.CARDS).filter(n => !D.CARD_DETAIL[n]);
@@ -193,12 +194,31 @@ function runSelfTest(){
     G.players = [fakePlayer(0, { hp:3, skills:['体能'] }), fakePlayer(1), fakePlayer(2), fakePlayer(3)];
     ok('波比【体能】手牌上限 +1（3 → 4）', E.handLimit(G.players[0]) === 4);
 
-    /* ---------- 9. 角色库约束 ---------- */
-    ok('角色共 20 名', D.CHARACTERS.length === 20, '实际 ' + D.CHARACTERS.length);
-    ok('每名角色最多 2 个技能', D.CHARACTERS.every(c => c.skills.length <= 2));
-    ok('角色牌不含阵营字段', D.CHARACTERS.every(c => !c.faction && !c.camp));
-    const sexMissing = D.CHARACTERS.filter(c => !E.SEX[c.name]).map(c => c.name);
+    /* ---------- 9. 角色库与拓展包 ---------- */
+    // 不再断言"正好 20 名" —— 拓展包会往上加。改成断言结构不变式。
+    const allChars = D.allCharacters();
+    ok('基础角色库不少于 20 名', D.CHARACTERS.length >= 20, '实际 ' + D.CHARACTERS.length);
+    ok('每名角色最多 2 个技能', allChars.every(c => c.skills.length <= 2));
+    ok('角色牌不含阵营字段（阵营只能挂 p.side，不能挂武将牌）',
+       allChars.every(c => !c.faction && !c.camp));
+    const sexMissing = allChars.filter(c => !E.SEX[c.name]).map(c => c.name);
     ok('性别表覆盖全部角色（激光笔需要）', sexMissing.length === 0, sexMissing.join('、'));
+    // 重名会静默打坏 CHARACTER_BY_NAME（后一个覆盖前一个）和 AI 的按名找人
+    const allNames = allChars.map(c => c.name);
+    ok('角色名全局唯一（含拓展包）', new Set(allNames).size === allNames.length,
+       allNames.join('、'));
+    ok('角色 id 全局唯一（含拓展包）',
+       new Set(allChars.map(c => c.id)).size === allChars.length);
+
+    // 拓展包开关：关掉时必须**逐字**回到基础名单 —— 这是"不影响现有对局"的硬保证
+    const off = D.roster({});
+    ok('不启用任何拓展包时 = 基础名单',
+       off.length === D.CHARACTERS.length && off.every((c, i) => c === D.CHARACTERS[i]),
+       '实际 ' + off.length + ' vs ' + D.CHARACTERS.length);
+    const on = D.roster({ laoshi:true, pack1:true });
+    ok('启用全部拓展包时 = 基础 + 两个包',
+       on.length === D.CHARACTERS.length + D.PACKS.laoshi.length + D.PACKS.pack1.length,
+       '实际 ' + on.length);
 
   } finally {
     G.players = savedPlayers;

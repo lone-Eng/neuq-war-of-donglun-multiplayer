@@ -27,9 +27,12 @@ const E = window.Engine;
 const Net = {};
 window.Net = Net;
 
-/* 武将按 id 建索引：帧里只传 charId，客户端自己解析成 D.CHARACTERS 里的对象 */
+/* 武将按 id 建索引：帧里只传 charId，客户端自己解析回武将对象。
+ * 按**全部角色**（含所有拓展包）建，不能只索引基础名单 ——
+ * 否则开了拓展包的局，客机收到牢师包角色的 charId 会解析不出对象，
+ * 表现是客机上那个座位没有角色名、技能按钮全空。 */
 const CHAR_BY_ID = {};
-D.CHARACTERS.forEach(c => { CHAR_BY_ID[c.id] = c; });
+D.allCharacters().forEach(c => { CHAR_BY_ID[c.id] = c; });
 Net.CHAR_BY_ID = CHAR_BY_ID;
 
 /* =========================================================
@@ -227,12 +230,18 @@ function projectMarks(p){
 
 function projectPlayer(p, viewerSeat, revealAll){
   const self = (p.seat === viewerSeat);
-  const known = self || revealAll || p.revealed || p.identity === 'dean';
+  // 身份可见性也走形式表：身份局的判据原样保留（院长公开 + 死亡揭示），
+  // 团队形式的阵营本来就是公开的。E.sideInfo 拿不到（早期自检环境）时退回原判据。
+  const known = self || revealAll ||
+    (window.Engine && window.Engine.sideInfo
+      ? window.Engine.sideInfo(p).visible
+      : (p.revealed || p.identity === 'dean'));
   return {
     seat: p.seat,
     name: p.char ? p.char.name : ('座位 ' + (p.seat + 1)),   // 引擎里 name 是 getter，必须显式带上
     charId: p.char ? p.char.id : null,
     identity: known ? p.identity : null,
+    side: p.side || null,
     revealed: !!p.revealed,
     hp: p.hp,
     maxHp: p.maxHp,
@@ -280,6 +289,7 @@ Net.project = function(viewerSeat, revealAll){
   }
   return {
     rev: Net.rev,
+    format: G.format,                 // 客户端按它决定渲染"身份"还是"阵营"
     // 注意：**不发 humanSeat**。客户端自己持有自己的座位，
     // 从快照里抄的话会让每个客户端都去渲染房主的手牌和身份。
     players: G.players.map(p => projectPlayer(p, viewerSeat, revealAll)),
@@ -599,7 +609,11 @@ Net.rev = 0;
 Net.session = null;        // {base, code, peer, token, name, isHost}
 Net.roster = [];           // [{peer, name, spectator, seat, online, self}]
 Net.mySeat = -1;           // 客户端自己坐哪（旁观 = -1）
-Net.config = { count: 5, deal: 3, mode: 'A', protect: true, hostPlays: true, aiLevel: 'normal' };
+/** 自由人数的玩法可选的人数（大厅那排按钮和"切回自由玩法时回到几"共用这一份） */
+const LOBBY_COUNTS = [4, 5, 6, 7, 8];
+Net.config = { format: 'identity',   // 玩法，由房主决定（见 engine.js 的 FORMAT 表）
+               count: 5, deal: 3, mode: 'A', protect: true, hostPlays: true, aiLevel: 'normal',
+               packs: {} };   // 启用的角色拓展包，由房主决定；空对象 = 一个都不开
 Net.lastResult = null;
 
 Net.isOnline = function(){ return !!(Net.session && Net.transport && Net.transport.running); };
@@ -731,6 +745,42 @@ function readServer(){
 }
 
 /**
+ * 这个地址是不是"只有本机够得着"的（localhost / 127.x / ::1）。
+ *
+ * 为什么需要它：邀请链接里的服务器地址是从**当前网页地址**推断的（serverBase），
+ * 房主用 http://localhost:8080 打开时，发出去的链接就是 localhost ——
+ * 同学点开连的是他自己的电脑。这个坑没法在代码里自动绕开（房主自己的浏览器
+ * 就是跑在这个地址上），只能当场把话说明白，所以大厅里要拿它判断。
+ */
+Net.isLoopbackUrl = function(url){
+  if (!url) return false;
+  let host = '';
+  try {
+    host = new URL(String(url), (window.location && window.location.href) || undefined).hostname;
+  } catch (e){
+    // 没有 URL 构造器：退化成从字符串里抠主机名
+    const m = /^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(url));
+    if (!m) return false;
+    host = m[1];
+  }
+  // [::1] 这种 IPv6 字面量带方括号，先剥掉
+  host = String(host).toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
+         /^127\./.test(host) || /\.localhost$/.test(host);
+};
+
+/** 邀请链接的 localhost 提醒（不需要提醒时返回空串）。文案单独拎出来是为了能直接测。 */
+Net.inviteWarnHtml = function(link){
+  if (link === undefined) link = Net.inviteLink();
+  if (!link || !Net.isLoopbackUrl(link)) return '';
+  return '<p class="hint warn-hint">注意：这条链接里是 <b>localhost</b>，' +
+    '同学点开连的是他自己的电脑，进不来。<br>' +
+    '改法：房主用服务器启动时打印的<b>局域网地址</b>打开本页，' +
+    '或者双击 <b>start-online.bat</b> 用公网地址打开（见 README「大家不在同一个 WiFi」）。' +
+    '换地址重开本页之后，再点「创建房间」即可。</p>';
+};
+
+/**
  * 邀请链接：房主一条链接发到群里，同学点开就能进房间 ——
  * 不用再让人手抄「服务器地址 + 4 位房间号」两样东西。
  * 只有在从 http(s) 打开时才能生成（能推断出服务器地址）。
@@ -810,30 +860,49 @@ function renderRoom(status){
   const humans = Net.roster.filter(r => !r.spectator).length;
   const bots = Math.max(0, Net.config.count - humans);
 
+  const link = Net.inviteLink();
+  const loop = !!link && Net.isLoopbackUrl(link);
+  // 固定人数的玩法（2V2 = 4 人、斗地主 = 3 人）没有"总人数 / 身份模式"可挑，
+  // 摆在那儿只会让人以为能改 —— 整行不渲染（切玩法时下面那段已经把人数据定死了）
+  const fmt = window.Engine.formats().filter(f => f.key === Net.config.format)[0] || {};
+  const fixedSeats = !!fmt.seats;
+
   renderLobby(
     '<div class="room-line">房间号　<span class="room-code-big">' + esc(me.code) + '</span>' +
       '<button class="mini" id="net-copy">复制邀请链接</button></div>' +
-    (Net.inviteLink()
+    (link
       ? '<p class="hint">把这条链接发到群里，同学点开就能直接进房间：<br>' +
-        '<span class="invite-link">' + esc(Net.inviteLink()) + '</span></p>'
+        '<span class="invite-link">' + esc(link) + '</span></p>' +
+        // 房主用 localhost 打开本页时，链接里就是 localhost —— 说清楚怎么改，
+        // 否则最容易发生的翻车是"复制了链接发群里，同学点开各连各的电脑"。
+        (isHost ? Net.inviteWarnHtml(link) : '')
       : '<p class="hint">' + serverHintText() +
         '把房间号告诉同学，他们在同一地址打开游戏、点「联机对战 → 加入房间」。</p>') +
     '<div class="lobby-list">' + rows + '</div>' +
     '<p class="hint">真人 ' + humans + ' 名' +
       (bots ? '，其余 <b>' + bots + '</b> 个座位由电脑补齐' : '') + '　·　总人数 ' + Net.config.count +
-      (isHost ? '（可在下面改）' : '') + '</p>' +
+      (isHost && !fixedSeats ? '（可在下面改）' : '') + '</p>' +
     (isHost
-      ? '<div class="form-row"><label>总人数</label><div class="btn-group" id="net-count2">' +
-          [4, 5, 6, 7, 8].map(n => '<button data-n="' + n + '"' +
-            (n === Net.config.count ? ' class="on"' : '') + '>' + n + ' 人</button>').join('') +
-        '</div></div>' +
-        '<div class="form-row"><label>身份模式</label><div class="btn-group" id="net-mode">' +
-          [['A', 'A 随机身份'], ['B', 'B 自选阵营'], ['C', 'C 半随机']].map(function (m) {
-            return '<button data-m="' + m[0] + '"' +
-              (Net.config.mode === m[0] ? ' class="on"' : '') + '>' + m[1] + '</button>';
+      ? '<div class="form-row"><label>玩法</label><div class="btn-group" id="net-format">' +
+          window.Engine.formats().map(function (f) {
+            return '<button data-format="' + f.key + '"' +
+              (Net.config.format === f.key ? ' class="on"' : '') + '>' + f.label + '</button>';
           }).join('') +
         '</div></div>' +
-        '<p class="hint" id="net-mode-hint">' + modeHint(Net.config.mode) + '</p>' +
+        '<p class="hint" id="net-format-hint">' + formatHintText() + '</p>' +
+        (fixedSeats ? '' :
+          '<div class="form-row"><label>总人数</label><div class="btn-group" id="net-count2">' +
+            LOBBY_COUNTS.map(n => '<button data-n="' + n + '"' +
+              (n === Net.config.count ? ' class="on"' : '') + '>' + n + ' 人</button>').join('') +
+          '</div></div>') +
+        (fixedSeats ? '' :
+          '<div class="form-row"><label>身份模式</label><div class="btn-group" id="net-mode">' +
+            [['A', 'A 随机身份'], ['B', 'B 自选阵营'], ['C', 'C 半随机']].map(function (m) {
+              return '<button data-m="' + m[0] + '"' +
+                (Net.config.mode === m[0] ? ' class="on"' : '') + '>' + m[1] + '</button>';
+            }).join('') +
+          '</div></div>' +
+          '<p class="hint" id="net-mode-hint">' + modeHint(Net.config.mode) + '</p>') +
         '<div class="form-row"><label>电脑强度</label><div class="btn-group" id="net-ai">' +
           [['easy', '简单'], ['normal', '普通'], ['hard', '困难']].map(function (m) {
             return '<button data-l="' + m[0] + '"' +
@@ -841,22 +910,35 @@ function renderRoom(status){
           }).join('') +
         '</div></div>' +
         '<p class="hint">' + Net.aiHint(Net.config.aiLevel) + '</p>' +
+        (D.PACK_META.length
+          ? '<div class="form-row"><label>角色拓展包</label><div class="btn-group" id="net-packs">' +
+              D.PACK_META.map(function (m) {
+                return '<button data-pack="' + m.key + '"' +
+                  (Net.config.packs[m.key] ? ' class="on"' : '') + '>' + m.name + '</button>';
+              }).join('') +
+            '</div></div>' +
+            '<p class="hint" id="net-pack-hint">' + packHintText() + '</p>'
+          : '') +
         '<div class="btn-group">' +
           '<button id="net-plays" class="toggle ' + (Net.config.hostPlays ? 'on' : '') + '">房主也参战</button>' +
           '<button id="net-protect" class="toggle ' + (Net.config.protect ? 'on' : '') + '">保护轮</button>' +
         '</div>' +
         '<div class="start-actions"><button id="net-go" class="primary big">开始游戏</button></div>'
-      : '<p class="hint">等房主点「开始游戏」…</p>') +
+      : '<p class="hint">' + packHintText() + '</p>' +
+        '<p class="hint">等房主点「开始游戏」…</p>') +
     (status ? '<p class="hint warn-hint">' + esc(status) + '</p>' : '')
   );
 
   const copy = document.getElementById('net-copy');
   if (copy) copy.addEventListener('click', () => {
-    const link = Net.inviteLink();
     const text = link || me.code;
-    const tip = link ? '邀请链接已复制，发到群里就行' : ('房间号：' + text);
+    // 复制这一步最容易直接发给同学，所以 localhost 的警告在这里也要再说一次
+    const tip = !link ? ('房间号：' + text)
+      : loop ? '复制好了，但链接里是 localhost —— 同学连不上，先按上面的提示换地址'
+      : '邀请链接已复制，发到群里就行';
+    const lvl = (link && !loop) ? 'good' : (loop ? 'warn' : '');
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(
-      () => window.UI.toast(tip, 'good'), () => window.UI.toast(tip, ''));
+      () => window.UI.toast(tip, lvl), () => window.UI.toast(tip, ''));
     else window.UI.toast(tip, '');
   });
 
@@ -889,6 +971,32 @@ function renderRoom(status){
     Net.config.protect = !Net.config.protect;
     broadcastLobby();
   });
+  // 玩法是"大改"（人数、身份模式、座位编排全受影响），改完直接重绘大厅最省事
+  document.querySelectorAll('#net-format button').forEach(b => {
+    b.addEventListener('click', () => {
+      Net.config.format = b.dataset.format;
+      const f = window.Engine.formats().filter(x => x.key === Net.config.format)[0];
+      if (f && f.seats) Net.config.count = f.seats;      // 固定人数的玩法直接定死
+      // 切回自由人数的玩法时，别停在斗地主留下的 3 人（身份局最少 4 人）——
+      // 那样会开出一局 3 人身份局，大厅里也没有任何人数按钮是亮的
+      else if (LOBBY_COUNTS.indexOf(Net.config.count) < 0) Net.config.count = 5;
+      assignSeats();
+      broadcastLobby();
+      renderRoom();
+    });
+  });
+
+  // 拓展包由房主定。就地更新按钮与说明文字，不重绘整个大厅
+  // （重绘会把名册里其他人刚打的字也清掉）
+  document.querySelectorAll('#net-packs button').forEach(b => {
+    b.addEventListener('click', () => {
+      Net.config.packs[b.dataset.pack] = !Net.config.packs[b.dataset.pack];
+      b.classList.toggle('on', !!Net.config.packs[b.dataset.pack]);
+      const h = document.getElementById('net-pack-hint');
+      if (h) h.textContent = packHintText();
+      broadcastLobby();
+    });
+  });
   document.getElementById('net-go').addEventListener('click', hostStartGame);
 }
 
@@ -897,6 +1005,25 @@ function modeHint(mode){
   if (mode === 'B') return '自选阵营：身份池公开，按座位顺序轮流挑，选完只有本人知道（院长公开）。';
   if (mode === 'C') return '半随机：先选角色、再揭晓身份 —— 你会在不知道身份的情况下挑武将。';
   return '随机身份：洗混身份牌，每人一张，竞技性最强。';
+}
+/** 玩法的说明文字（房主与客机看到同一句），顺带说明固定人数 */
+function formatHintText(){
+  const f = window.Engine.formats().filter(x => x.key === Net.config.format)[0];
+  if (!f) return '';
+  const fixed = f.seats ? '固定 ' + f.seats + ' 人。' : '';
+  if (f.key === 'team2v2') return fixed + '红队 1、4 号位 vs 蓝队 2、3 号位，队友明置。';
+  if (f.key === 'landlord') return fixed + '1 地主 vs 2 农民，叫分定地主。';
+  return fixed + '随机身份、互相猜忌的经典玩法。';
+}
+
+/** 拓展包开关的说明文字，房主和客机看到的是同一句 */
+function packHintText(){
+  const on = D.PACK_META.filter(m => Net.config.packs[m.key]);
+  if (!on.length) return '未启用拓展包 —— 本局只有基础武将。';
+  const names = on.map(m => m.name).join('、');
+  const extra = D.roster(Net.config.packs).length - D.CHARACTERS.length;
+  return extra ? '已启用：' + names + '　本局可选武将 ' + D.roster(Net.config.packs).length + ' 名。'
+               : '已启用：' + names + '（这个包还没有角色）';
 }
 
 function serverHintText(){
@@ -916,10 +1043,12 @@ function broadcastLobby(){
     sendTo(r.peer, {
       t: 'lobby',
       code: Net.session.code,
+      format: Net.config.format,        // 客机要靠它显示玩法，开局时也要按它走
       count: Net.config.count,
       hostPlays: Net.config.hostPlays,
       protect: Net.config.protect,
       aiLevel: Net.config.aiLevel,
+      packs: Net.config.packs,          // 客机要靠它显示"本局有哪些拓展包"
       roster: Net.roster.map(x => ({
         name: x.name, seat: x.seat, host: !!x.host, online: !!x.online,
         spectator: !!x.spectator, self: x.peer === r.peer
@@ -1010,6 +1139,8 @@ function hostOnMessage(m){
     case 'ans':  hostOnAnswer(m.from, d); break;
     case 'pick': hostOnPick(m.from, d); break;
     case 'idpick': hostOnIdPick(m.from, d); break;
+    case 'bidAns': hostOnBidAns(m.from, d); break;
+    case 'banAns': hostOnBanAns(m.from, d); break;
     case 'discard':
       // 弃牌堆是公开信息（每次弃牌都进了日志），按需给一份即可
       sendTo(m.from, { t: 'discard', cards: (G.discard || []).map(inlineCard) });
@@ -1066,18 +1197,34 @@ function hostStartGame(){
   const humans = Net.roster.filter(r => !r.spectator && r.online);
   if (!humans.length){ window.UI.toast('至少要有一个人参战', 'warn'); return; }
   Net.started = true;
-  Net.config.count = Math.max(Net.config.count, humans.length);
+  // 固定人数的玩法（2V2=4、斗地主=3）**不能**按真人数扩容 ——
+  // 原来这行会把 4 个真人顶成 4 座，而斗地主只有 3 座；多出来的人转旁观
+  const fmtSeats = (window.Engine.formats().filter(x => x.key === Net.config.format)[0] || {}).seats;
+  if (fmtSeats){
+    Net.config.count = fmtSeats;
+    // humans 是上面那份**快照**，改了 r.spectator 不会反映回去 —— 所以下面
+    // 重算 humanSeats 时必须从 Net.roster 现取，否则超出座位的真人仍会被算进去
+    Net.roster.forEach(r => {
+      if (!r.spectator && r.online && r.seat >= fmtSeats) r.spectator = true;
+    });
+    assignSeats();
+  } else {
+    Net.config.count = Math.max(Net.config.count, humans.length);
+  }
   // 电脑跑在房主这边，开局前把强度落实一次
   Net.setAiLevel(Net.config.aiLevel);
 
-  const humanSeats = humans.map(r => r.seat).sort((a, b) => a - b);
+  const humanSeats = Net.roster.filter(r => !r.spectator && r.online)
+                                .map(r => r.seat).sort((a, b) => a - b);
   Net.rolePick = {};
   humanSeats.forEach(s => { Net.rolePick[s] = null; });
 
   E.initGame({
     count: Net.config.count, mode: Net.config.mode, deal: Net.config.deal,
     hotseat: false, protect: Net.config.protect, networkRule: false,
-    humanSeats: humanSeats
+    humanSeats: humanSeats,
+    packs: Net.config.packs,           // 房主选的拓展包，全房共用
+    format: Net.config.format          // 房主选的玩法
   });
   // 房主如果只是"开房不玩"，就按旁观处理 —— 否则会渲染成某个玩家的视角而看到他的手牌
   if (!Net.config.hostPlays) G.humanSeat = -1;
@@ -1125,7 +1272,8 @@ function hostDraftStep(){
       identity: G.mode === 'C' ? null : p.identity,   // C 模式选角时还不揭晓
       choices: p.charChoices.map(c => c.id),
       dealPer: G.dealPer,
-      total: D.CHARACTERS.length,
+      total: (G.roster || D.CHARACTERS).length,   // 本局名单（含启用的拓展包）
+      packs: G.packs,                             // 客机靠它算出同样的名单长度
       // 带上快照：客户端还没建过 G.players，得靠它把玩家对象建起来
       s: Net.project(r.seat, false)
     });
@@ -1152,12 +1300,51 @@ function hostOnIdPick(peer, d){
   hostDraftStep();
 }
 
+/* ---- 斗地主叫分：开局前的一段交互 ----
+ * 和身份轮抽（'draft'/'idpick'）走同一套形状：房主持状态 → 逐人发问 → 收回答案。 */
+Net.pendingBid = null;
+
+Net.remoteBid = function(seat, cb){
+  const best = (G.bid && G.bid.best) || 0;
+  const r = Net.roster.find(x => x.seat === seat && !x.spectator && x.online);
+  if (!r){ cb(0); return; }                   // 人不在，当放弃
+  Net.pendingBid = { seat: seat, cb: cb };
+  sendTo(r.peer, { t:'bid', seat: seat, best: best, s: Net.project(seat, false) });
+};
+
+function hostOnBidAns(peer, d){
+  const r = Net.roster.find(x => x.peer === peer);
+  if (!r || !Net.pendingBid || Net.pendingBid.seat !== r.seat) return;
+  const cb = Net.pendingBid.cb;
+  Net.pendingBid = null;
+  cb(d.score | 0);
+}
+
+/* ---- 2V2 禁选：和叫分同一套形状 ---- */
+Net.pendingBan = null;
+
+Net.remoteBan = function(seat, cb){
+  const r = Net.roster.find(x => x.seat === seat && !x.spectator && x.online);
+  if (!r){ cb(null); return; }                // 人不在，等于不禁
+  Net.pendingBan = { seat: seat, cb: cb };
+  sendTo(r.peer, { t:'ban', seat: seat, banned: (G.bannedIds || []).slice(), s: Net.project(seat, false) });
+};
+
+function hostOnBanAns(peer, d){
+  const r = Net.roster.find(x => x.peer === peer);
+  if (!r || !Net.pendingBan || Net.pendingBan.seat !== r.seat) return;
+  const cb = Net.pendingBan.cb;
+  Net.pendingBan = null;
+  cb(d.charId || null);
+}
+
 function hostOnPick(peer, d){
   const r = Net.roster.find(x => x.peer === peer);
   if (!r || r.seat < 0) return;
   const p = G.players[r.seat];
   if (!p || p.char) return;
-  const char = D.CHARACTERS.find(c => c.id === d.charId);
+  // 从**全部角色**里找：客机可能选中的是拓展包里的角色，基础名单里没有
+  const char = D.allCharacters().find(c => c.id === d.charId);
   if (!char) return;
   if (p.charChoices.length && !p.charChoices.some(c => c.id === d.charId)) return;  // 只能挑自己的候选
   hostPickRole(r.seat, char);
@@ -1219,13 +1406,15 @@ function hostGameOver(){
   Net.setAsking(-1, 0);
   const res = Net.lastResult || { winner: null, reason: '' };
   const identities = G.players.map(p => p.identity);
+  const sides = G.players.map(p => p.side || null);        // 团队形式的阵营
   const seats = G.players.map(p => p.seat);
   // 评分板一起发过去 —— 它是全公开的赛后统计，每个客户端都该看到同一份
   const board = G.scoreboard || null;
   Net.roster.forEach(r => {
     sendTo(r.peer, {
       t: 'over', winner: res.winner, reason: res.reason,
-      seats: seats, identities: identities, scoreboard: board
+      seats: seats, identities: identities, sides: sides, format: G.format,
+      scoreboard: board
     });
   });
   Net.started = false;
@@ -1361,6 +1550,9 @@ function serializeGame(){
                                    spectator: !!r.spectator, online: !!r.online })),
     game: {
       mode: G.mode, opts: G.opts, turnSeat: G.turnSeat, round: G.round,
+      // 开局前两段交互的状态（叫分 / 禁选）。房主在设置阶段掉线时，接手的人要知道走到哪了
+      bid: G.bid || null, bidDone: !!G.bidDone, bidScore: G.bidScore || 0,
+      ban: G.ban || null, banDone: !!G.banDone, bannedIds: (G.bannedIds || []).slice(),
       turnId: G.turnId, speed: G.speed, rescueLog: G.rescueLog || {},
       idPool: G.idPool || [], harmLog: G.harmLog || [], log: G.log || [],
       humanSeats: G.humanSeats || [], dealPer: G.dealPer, firstRound: G.firstRound,
@@ -1376,6 +1568,8 @@ function serializeGame(){
         usedAttackCardThisPhase: p.usedAttackCardThisPhase || 0,
         usedDelayed: p.usedDelayed || 0, hotUsed: p.hotUsed || 0, shuikeUsed: p.shuikeUsed || 0,
         skip: p.skip || {}, dodgeBan: !!p.dodgeBan, pointBan: !!p.pointBan,
+        eventBan: !!p.eventBan,       // 张金雪【铁面】；漏了接手后会"本回合禁令失效"
+        bilingual: !!p.bilingual,     // Tania【双语】同理
         charChoices: (p.charChoices || []).map(c => c.id)
       }))
     }
@@ -1387,7 +1581,14 @@ function deserializeGame(save){
   const s = save.game;
   const G = window.G;
   G.mode = s.mode; G.opts = s.opts || {}; G.turnSeat = s.turnSeat; G.round = s.round;
+  // G.opts 是整体存的，所以 opts.packs 自动跟着走；但 G.roster 是从它派生的顶层字段，
+  // 不重新算一遍的话，接手后补位会从**基础名单**里挑人，可能挑到本局根本没发出去的角色
+  G.packs = (s.opts && s.opts.packs) || {};
+  G.roster = D.roster(G.packs);
+  G.format = (s.opts && s.opts.format) || 'identity';   // 同理：从 opts 里重算
   G.turnId = s.turnId; G.speed = s.speed || 1.35;
+  G.bid = s.bid || null; G.bidDone = !!s.bidDone; G.bidScore = s.bidScore || 0;
+  G.ban = s.ban || null; G.banDone = !!s.banDone; G.bannedIds = s.bannedIds || [];
   G.rescueLog = s.rescueLog || {}; G.idPool = s.idPool || [];
   G.harmLog = s.harmLog || []; G.log = s.log || [];
   G.humanSeats = s.humanSeats || []; G.dealPer = s.dealPer;
@@ -1701,7 +1902,9 @@ function cleanShell(){
   // 之后 un-hide 出来的是个高度为 0 的空条（复盘条就这样消失过一次）。
   ['#opponents', '#my-hand', '#actions', '#log', '#play-stack', '#target-bar',
    '#spectator-bar', '#net-box', '#role-options', '#draft-options',
-   '#identity-preview', '#over-body'].forEach(sel => {
+   '#identity-preview', '#over-body',
+   // 弹窗层：叫分这类开局前的交互是弹窗，万一导出时正开着，会整块被克隆进去
+   '#modal-layer', '#fx-layer', '#ban-options'].forEach(sel => {
     const el = clone.querySelector(sel);
     if (el) el.innerHTML = '';
   });
@@ -2053,6 +2256,8 @@ function clientOnMessage(m){
   switch (d.t){
     case 'lobby': clientLobby(d); break;
     case 'draft': clientDraft(d); break;
+    case 'bid':   clientBid(d); break;
+    case 'ban':   clientBan(d); break;
     case 'role':  clientRole(d); break;
     case 'go':    clientGo(d); break;
     case 'watch': clientWatch(d); break;
@@ -2077,9 +2282,11 @@ function clientOnMessage(m){
 }
 
 function clientLobby(d){
+  if (d.format) Net.config.format = d.format;
   if (typeof d.count === 'number') Net.config.count = d.count;
   if (typeof d.protect === 'boolean') Net.config.protect = d.protect;
   if (d.aiLevel) Net.config.aiLevel = d.aiLevel;      // 只用来显示，电脑在房主那边跑
+  if (d.packs && typeof d.packs === 'object') Net.config.packs = d.packs;   // 只用来显示
   Net.roster = (d.roster || []).map(r => Object.assign({}, r, { peer: null }));
   const mine = Net.roster.find(r => r.self);
   if (mine) Net.mySeat = mine.seat;
@@ -2092,6 +2299,9 @@ function clientRole(d){
   Net.started = true;
   Net.mySeat = d.seat;
   G.mode = d.mode || 'A';
+  // 本局名单要现算：客机没跑过 initGame，G.roster 是空的，
+  // 不补的话选角界面上"剩下的 N 名里挑选"那个数字会按基础名单算，开了包就是错的
+  if (d.packs){ G.packs = d.packs; G.roster = D.roster(d.packs); }
   // ！！必须先吃快照！！ 客户端从来没调用过 Engine.initGame，
   // G.players 本来是个空数组；不先 hydrate 的话下面 p 就是 undefined，
   // 整个选角界面会静默失败、游戏开不起来。
@@ -2112,6 +2322,29 @@ function clientRole(d){
     // 模式 C：身份是选完角色才揭晓的（快照里已经带上，直接本地显示）
     if (G.mode === 'C') window.showIdentityReveal(d.seat, after);
     else after();
+  });
+}
+
+/** 房主发来的叫分请求（斗地主） */
+function clientBid(d){
+  Net.started = true;
+  Net.mySeat = d.seat;
+  if (d.s) hydrate(d.s);
+  G.bid = G.bid || { order: G.players.map(p => p.seat), best: 0, bestSeat: -1, done: {} };
+  G.bid.best = d.best || 0;                 // 客机也要知道当前最高分，界面才画得对
+  window.showBidPicker(d.seat, function (score){
+    sendTo('host', { t: 'bidAns', score: score });
+  });
+}
+
+/** 房主发来的禁选请求（2V2） */
+function clientBan(d){
+  Net.started = true;
+  Net.mySeat = d.seat;
+  if (d.s) hydrate(d.s);
+  G.bannedIds = (d.banned || []).slice();     // 客机也要知道前面禁了什么，界面才画得对
+  window.showBanPicker(d.seat, function (charId){
+    sendTo('host', { t: 'banAns', charId: charId });
   });
 }
 
@@ -2161,6 +2394,8 @@ function hydrate(snap){
 
   const players = (snap.players || []).map(hydratePlayer);
   G.players = players;
+  // 没带 format 的旧快照按身份局走（当时的唯一形式）
+  G.format = snap.format || 'identity';
   G.turnSeat = snap.turnSeat;
   G.round = snap.round;
   G.turnId = snap.turnId;
@@ -2237,13 +2472,12 @@ function clientOver(d){
   if (d.identities && Array.isArray(d.identities)){
     d.identities.forEach((id, i) => { if (G.players[i]) G.players[i].identity = id; });
   }
-  const me = G.players[G.humanSeat];
-  let win = false;
-  if (me){
-    if (d.winner === 'dean') win = (me.identity === 'dean' || me.identity === 'staff');
-    else if (d.winner === 'student') win = (me.identity === 'student');
-    else if (d.winner === 'mole') win = (me.identity === 'mole');
+  if (d.sides && Array.isArray(d.sides)){
+    d.sides.forEach((sd, i) => { if (G.players[i]) G.players[i].side = sd; });
   }
+  const me = G.players[G.humanSeat];
+  // 阵营归属走 E.winOf（第 4 份重复收敛掉的最后一份）
+  const win = !!(me && d.winner && window.Engine.winOf(d.winner, me));
   window.UI.cancelAsk();
   Net.started = false;
   window.UI.showOver(d.winner, d.reason, win, d.scoreboard || null);
